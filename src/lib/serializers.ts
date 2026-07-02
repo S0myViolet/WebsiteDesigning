@@ -228,7 +228,13 @@ export function buildBusinessWhere(f: BusinessFilterValues): Prisma.BusinessWher
   if (f.minScore !== undefined) where.opportunityScore = { gte: f.minScore };
   // SQLite has no case-insensitive `mode`; plain contains is close enough.
   if (f.search) where.name = { contains: f.search };
-  if (f.leadStatus) where.leadStatus = { status: f.leadStatus };
+  if (f.leadStatus === "NEW") {
+    // Untouched businesses have no LeadStatus row at all — "NEW" must match
+    // both the explicit rows and the missing ones.
+    where.OR = [{ leadStatus: null }, { leadStatus: { status: "NEW" } }];
+  } else if (f.leadStatus) {
+    where.leadStatus = { status: f.leadStatus };
+  }
   return where;
 }
 

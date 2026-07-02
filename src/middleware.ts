@@ -1,8 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authEnabled, verifySessionToken, SESSION_COOKIE } from "@/lib/auth";
+import {
+  authEnabled,
+  authMisconfigured,
+  verifySessionToken,
+  SESSION_COOKIE,
+} from "@/lib/auth";
 
 export async function middleware(request: NextRequest) {
   if (!authEnabled()) return NextResponse.next();
+
+  // Fail closed: admin credentials are set but there is no signing secret,
+  // so no session can be trusted. Block everything with a clear message.
+  if (authMisconfigured()) {
+    return NextResponse.json(
+      {
+        error:
+          "AUTH_SECRET must be set when ADMIN_EMAIL/ADMIN_PASSWORD are configured.",
+      },
+      { status: 500 }
+    );
+  }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const email = await verifySessionToken(token);

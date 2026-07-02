@@ -18,6 +18,8 @@ export function ApiKeyField({
   value,
   onChange,
   helpText,
+  pendingClear,
+  onClear,
 }: {
   id: string;
   label: string;
@@ -26,17 +28,30 @@ export function ApiKeyField({
   value: string;
   onChange: (value: string) => void;
   helpText?: string;
+  /** True when the stored key is marked for removal on save. */
+  pendingClear?: boolean;
+  /** Marks the stored override for removal (sent as "" on save). */
+  onClear?: () => void;
 }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
         <Label htmlFor={id}>{label}</Label>
         <Badge
-          variant={configured ? "success" : "outline"}
-          className={configured ? undefined : "text-muted-foreground"}
+          variant={pendingClear ? "warning" : configured ? "success" : "outline"}
+          className={configured || pendingClear ? undefined : "text-muted-foreground"}
         >
-          {configured ? "Configured" : "Not set"}
+          {pendingClear ? "Will be cleared on save" : configured ? "Configured" : "Not set"}
         </Badge>
+        {configured && onClear && !pendingClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-destructive"
+          >
+            Clear stored key
+          </button>
+        )}
       </div>
       <Input
         id={id}

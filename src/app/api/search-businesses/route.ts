@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { searchBusinessesInDubai } from "@/lib/google-places";
+import { isSocialOrAggregatorUrl } from "@/lib/website-detection";
 import { extractReviewKeywords } from "@/lib/keywords";
 import { computeOpportunityScore } from "@/lib/scoring";
 import { toJsonField } from "@/lib/utils";
@@ -73,12 +74,18 @@ export async function POST(req: NextRequest) {
         .filter((t) => t.trim().length > 0);
       const keywords = extractReviewKeywords(reviewTexts);
 
-      // Never clobber a verified website status: only set NO_WEBSITE_LISTED on
-      // create, or when the stored status is still UNKNOWN.
+      // Discovery only returns places with no website or a social/aggregator
+      // link (Instagram-only businesses) — the latter need a human look.
+      const freshStatus: WebsiteStatus =
+        place.websiteUrl && isSocialOrAggregatorUrl(place.websiteUrl)
+          ? "NEEDS_MANUAL_REVIEW"
+          : "NO_WEBSITE_LISTED";
+      // Never clobber a verified website status: only apply the fresh status
+      // on create, or when the stored status is still UNKNOWN.
       const websiteStatus: WebsiteStatus = !existing
-        ? "NO_WEBSITE_LISTED"
+        ? freshStatus
         : existing.websiteStatus === "UNKNOWN"
-          ? "NO_WEBSITE_LISTED"
+          ? freshStatus
           : (existing.websiteStatus as WebsiteStatus);
 
       const score = computeOpportunityScore({
@@ -101,7 +108,9 @@ export async function POST(req: NextRequest) {
         phone: place.phone,
         rating: place.rating,
         reviewCount: place.reviewCount,
-        websiteUrl: place.websiteUrl,
+        // Keep a URL found by verify-website: the fresh snapshot has none by
+        // construction, and overwriting would silently lose the verification.
+        websiteUrl: place.websiteUrl ?? existing?.websiteUrl ?? null,
         websiteStatus,
         googleMapsUrl: place.googleMapsUrl,
         openingHours: toJsonField(place.openingHours),
@@ -126,8 +135,9 @@ export async function POST(req: NextRequest) {
       if (existing) summary.updated += 1;
       else summary.saved += 1;
 
-      // Replace reviews with the latest snapshot.
-      await prisma.review.deleteMany({ where: { businessId: saved.id } });
+      // Replace reviews with the latest snapshot — atomically, and only when
+      // the snapshot actually has reviews (an empty details response must not
+      // wipe the analyzable history we already stored).
       const reviewRows = place.reviews
         .filter((r) => r.text.trim().length > 0)
         .map((r) => ({
@@ -138,7 +148,10 @@ export async function POST(req: NextRequest) {
           reviewerName: r.authorName,
         }));
       if (reviewRows.length > 0) {
-        await prisma.review.createMany({ data: reviewRows });
+        await prisma.$transaction([
+          prisma.review.deleteMany({ where: { businessId: saved.id } }),
+          prisma.review.createMany({ data: reviewRows }),
+        ]);
       }
 
       upsertedIds.push(saved.id);

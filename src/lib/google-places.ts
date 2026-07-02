@@ -15,6 +15,7 @@ import type {
   SearchParams,
   SearchRunSummary,
 } from "@/lib/types";
+import { isSocialOrAggregatorUrl } from "@/lib/website-detection";
 
 const SEARCH_URL = "https://places.googleapis.com/v1/places:searchText";
 const DETAILS_URL = "https://places.googleapis.com/v1/places";
@@ -229,6 +230,7 @@ export async function fetchPlaceDetails(
 interface Candidate {
   placeId: string;
   area: string;
+  nameKey: string;
   isLikelyChain: boolean;
 }
 
@@ -253,6 +255,7 @@ export async function searchBusinessesInDubai(
       lowReviews: 0,
       lowRating: 0,
       excludedType: 0,
+      outsideDubai: 0,
       likelyChain: 0,
       notOperational: 0,
     },
@@ -341,7 +344,14 @@ export async function searchBusinessesInDubai(
           summary.skipped.notOperational += 1;
           continue;
         }
-        if (place.websiteUri && place.websiteUri.trim() !== "") {
+        // A real website disqualifies the lead; a social/aggregator link
+        // (Instagram-only businesses etc.) is kept — those are prime leads
+        // and get websiteStatus NEEDS_MANUAL_REVIEW downstream.
+        if (
+          place.websiteUri &&
+          place.websiteUri.trim() !== "" &&
+          !isSocialOrAggregatorUrl(place.websiteUri)
+        ) {
           summary.skipped.hasWebsite += 1;
           continue;
         }
@@ -359,19 +369,34 @@ export async function searchBusinessesInDubai(
           continue;
         }
         if (!(place.formattedAddress ?? "").toLowerCase().includes("dubai")) {
-          summary.skipped.excludedType += 1;
+          summary.skipped.outsideDubai += 1;
           continue;
         }
 
         const nameKey = name.trim().toLowerCase();
         const areasForName = acceptedNameAreas.get(nameKey);
+        const areaCountWithCurrent =
+          (areasForName?.size ?? 0) + (areasForName?.has(area.name) ? 0 : 1);
         const looksLikeChain =
           nameKey.length > 0 &&
-          (isChainName(nameKey) ||
-            (areasForName !== undefined && areasForName.size >= 3));
+          (isChainName(nameKey) || areaCountWithCurrent >= 3);
         if (looksLikeChain && !params.includeChains) {
           summary.skipped.likelyChain += 1;
+          // The multi-area pattern only becomes visible at the 3rd branch —
+          // retroactively drop the same-name candidates accepted earlier.
+          for (let i = candidates.length - 1; i >= 0; i--) {
+            if (candidates[i].nameKey === nameKey) {
+              candidates.splice(i, 1);
+              summary.skipped.likelyChain += 1;
+            }
+          }
           continue;
+        }
+        if (looksLikeChain) {
+          // includeChains=true: flag earlier same-name branches as chains too.
+          for (const c of candidates) {
+            if (c.nameKey === nameKey) c.isLikelyChain = true;
+          }
         }
 
         // Accepted at the search stage.
@@ -383,6 +408,7 @@ export async function searchBusinessesInDubai(
         candidates.push({
           placeId: place.id,
           area: area.name,
+          nameKey,
           isLikelyChain: looksLikeChain,
         });
       }
@@ -401,7 +427,12 @@ export async function searchBusinessesInDubai(
         area: candidate.area,
       });
       // Details sometimes reveal a website the search mask missed.
-      if (detailed.websiteUrl && detailed.websiteUrl.trim() !== "") {
+      // Social/aggregator links are kept (see the search-stage filter).
+      if (
+        detailed.websiteUrl &&
+        detailed.websiteUrl.trim() !== "" &&
+        !isSocialOrAggregatorUrl(detailed.websiteUrl)
+      ) {
         summary.skipped.hasWebsite += 1;
         return;
       }

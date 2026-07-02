@@ -49,10 +49,16 @@ const COLUMN_ACCESSORS: Record<string, ColumnAccessor | undefined> = {
 /**
  * Escape a single CSV field per RFC 4180: fields containing a comma, double
  * quote, or newline are wrapped in double quotes with inner quotes doubled.
+ * Fields starting with a formula trigger (=, +, -, @, tab, CR) are prefixed
+ * with a single quote — business names/reviews come from third parties, and
+ * spreadsheet apps would otherwise execute them as formulas (CSV injection).
  */
 function escapeCsvField(value: CellValue): string {
   if (value === null || value === undefined) return "";
-  const text = String(value);
+  let text = String(value);
+  if (/^[=+\-@\t\r]/.test(text)) {
+    text = `'${text}`;
+  }
   if (/[",\r\n]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }

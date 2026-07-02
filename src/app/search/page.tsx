@@ -38,6 +38,7 @@ const SKIPPED_LABELS: Record<keyof SearchRunSummary["skipped"], string> = {
   lowReviews: "Low reviews",
   lowRating: "Low rating",
   excludedType: "Excluded type",
+  outsideDubai: "Outside Dubai",
   likelyChain: "Likely chain",
   notOperational: "Not operational",
 };

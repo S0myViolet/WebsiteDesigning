@@ -65,6 +65,13 @@ export default function SettingsPage() {
   const [openaiKey, setOpenaiKey] = React.useState("");
   const [searchKey, setSearchKey] = React.useState("");
   const [searchEngineId, setSearchEngineId] = React.useState("");
+  // Stored keys marked for removal on save (sent as "" so the DB override is
+  // cleared and getSettings falls back to the env var).
+  const [clearKeys, setClearKeys] = React.useState<{
+    google: boolean;
+    openai: boolean;
+    search: boolean;
+  }>({ google: false, openai: false, search: false });
 
   // Discovery defaults
   const [minReviews, setMinReviews] = React.useState("50");
@@ -92,6 +99,7 @@ export default function SettingsPage() {
     setGoogleKey("");
     setOpenaiKey("");
     setSearchKey("");
+    setClearKeys({ google: false, openai: false, search: false });
     setSearchEngineId(data.searchEngineId);
     setMinReviews(String(data.minReviews));
     setMinRating(String(data.minRating));
@@ -131,10 +139,14 @@ export default function SettingsPage() {
   function buildPayload(current: MaskedSettings): Partial<AppSettings> {
     const payload: Partial<AppSettings> = {};
 
-    // API keys — only send freshly typed, non-masked values.
+    // API keys — send freshly typed, non-masked values; a pending clear
+    // sends "" (removes the stored override) unless a new key was typed.
     if (isNewKey(googleKey)) payload.googleMapsApiKey = googleKey.trim();
+    else if (clearKeys.google) payload.googleMapsApiKey = "";
     if (isNewKey(openaiKey)) payload.openaiApiKey = openaiKey.trim();
+    else if (clearKeys.openai) payload.openaiApiKey = "";
     if (isNewKey(searchKey)) payload.searchApiKey = searchKey.trim();
+    else if (clearKeys.search) payload.searchApiKey = "";
     if (searchEngineId.trim() !== current.searchEngineId) {
       payload.searchEngineId = searchEngineId.trim();
     }
@@ -275,6 +287,8 @@ export default function SettingsPage() {
             value={googleKey}
             onChange={setGoogleKey}
             helpText="Required for business discovery via the Places API."
+            pendingClear={clearKeys.google}
+            onClear={() => setClearKeys((c) => ({ ...c, google: true }))}
           />
           <ApiKeyField
             id="openai-key"
@@ -284,6 +298,8 @@ export default function SettingsPage() {
             value={openaiKey}
             onChange={setOpenaiKey}
             helpText="Required for review analysis and website copy generation."
+            pendingClear={clearKeys.openai}
+            onClear={() => setClearKeys((c) => ({ ...c, openai: true }))}
           />
           <ApiKeyField
             id="search-key"
@@ -293,6 +309,8 @@ export default function SettingsPage() {
             value={searchKey}
             onChange={setSearchKey}
             helpText="Optional — improves website detection accuracy."
+            pendingClear={clearKeys.search}
+            onClear={() => setClearKeys((c) => ({ ...c, search: true }))}
           />
           <div className="space-y-1.5">
             <Label htmlFor="search-engine-id">Search engine ID</Label>

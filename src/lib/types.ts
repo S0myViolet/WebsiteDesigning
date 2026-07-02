@@ -91,6 +91,7 @@ export interface SearchRunSummary {
     lowReviews: number;
     lowRating: number;
     excludedType: number;
+    outsideDubai: number;
     likelyChain: number;
     notOperational: number;
   };

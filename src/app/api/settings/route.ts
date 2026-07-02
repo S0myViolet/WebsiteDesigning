@@ -49,11 +49,12 @@ export async function PUT(req: NextRequest) {
 
     const partial: Partial<AppSettings> = { ...parsed.data };
 
-    // Ignore masked/empty API-key values so a round-tripped masked settings
-    // object never overwrites real keys.
+    // Ignore masked API-key values so a round-tripped masked settings object
+    // never overwrites real keys. Genuine empty strings pass through: they
+    // clear the stored override (getSettings then falls back to the env var).
     for (const field of API_KEY_FIELDS) {
       const value = partial[field];
-      if (value !== undefined && (value.trim() === "" || value.includes("…"))) {
+      if (value !== undefined && value.includes("…")) {
         delete partial[field];
       }
     }

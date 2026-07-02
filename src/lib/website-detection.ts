@@ -79,6 +79,16 @@ function isSocialOrAggregator(host: string): boolean {
   return SOCIAL_AGGREGATOR_DOMAINS.some((d) => host.includes(d));
 }
 
+/**
+ * Whether a listing URL points at a social network/aggregator rather than a
+ * real business website. Used by discovery to keep social-only businesses as
+ * leads instead of discarding them as "has website".
+ */
+export function isSocialOrAggregatorUrl(url: string): boolean {
+  const host = hostnameOf(url);
+  return host !== null && isSocialOrAggregator(host);
+}
+
 function isDirectoryDomain(host: string): boolean {
   return DIRECTORY_DOMAINS.some((d) => host.includes(d));
 }
@@ -204,6 +214,15 @@ export async function detectWebsiteStatus(
   if (phone) queries.push(`"${phone}" website`);
 
   const tokens = nameTokens(input.name);
+  if (tokens.length === 0) {
+    // Non-Latin-script or all-generic names produce no scoreable tokens, so
+    // every candidate would score 0 and the business would always be
+    // misclassified LIKELY_MISSING. Hand these to a human instead.
+    evidence.push(
+      "Business name yields no searchable tokens (non-Latin script or generic words only) — search results cannot be scored reliably."
+    );
+    return { status: "NEEDS_MANUAL_REVIEW", foundUrl: null, evidence };
+  }
   const candidates: Candidate[] = [];
   const seenLinks = new Set<string>();
 

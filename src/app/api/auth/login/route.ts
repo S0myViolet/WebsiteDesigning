@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
   authEnabled,
+  authMisconfigured,
   checkCredentials,
   createSessionToken,
   SESSION_COOKIE,
@@ -27,6 +28,15 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (authMisconfigured()) {
+      return NextResponse.json(
+        {
+          error:
+            "AUTH_SECRET must be set when ADMIN_EMAIL/ADMIN_PASSWORD are configured. Login is blocked until it is.",
+        },
+        { status: 500 }
+      );
+    }
 
     const body = await req.json().catch(() => null);
     const parsed = bodySchema.safeParse(body);
@@ -38,7 +48,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { email, password } = parsed.data;
-    if (!checkCredentials(email, password)) {
+    if (!(await checkCredentials(email, password))) {
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
