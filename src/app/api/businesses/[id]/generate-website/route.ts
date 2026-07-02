@@ -1,14 +1,16 @@
 // Website generation pipeline (POST /api/businesses/[id]/generate-website):
-//  1. Collect business data          6. Generate website copy
-//  2. Optional public research       7. (visual style comes with the brief)
-//  3. Ensure review analysis         8. Render preview + export code
-//  4. Create the design brief        9. Quality gate (auto-improve below 80)
-//  5. Select the layout variant     10. Save everything
+//  1. Collect business data          6. Generate layout-aware copy
+//  2. Optional public research       7. (creative direction + design system
+//  3. Ensure review analysis            + visual style come with the brief)
+//  4. Creative direction + brief     8. Design audit (auto-improve below 90,
+//  5. Select the layout variant         hero-weakness rescue) + uniqueness
+//                                    9. Render preview + export, save all
 //
-// Body { mode?: "full" | "copy" | "style" }:
+// Body { mode?: "full" | "copy" | "style", layout?: LayoutType }:
 //  - full  (default): run every step fresh
-//  - copy:  keep the stored brief/style/layout, regenerate copy only
-//  - style: keep the copy, regenerate the brief + visual style + layout
+//  - copy:  keep the stored direction/system/style/layout, regenerate copy
+//  - style: keep the copy, regenerate direction + system + style + layout
+//  - layout: force a specific layout variant (from the preview page picker)
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
