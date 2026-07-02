@@ -4,10 +4,13 @@
 import { z } from "zod";
 import type {
   AnalysisJson,
+  CreativeDirectionJson,
   DesignBriefJson,
+  FeatureSectionType,
   LayoutType,
   WebsiteCopyJson,
 } from "@/lib/types";
+import { FEATURE_SECTION_TYPES } from "@/lib/types";
 import { chatJson } from "@/lib/ai/openai-client";
 import {
   COPY_RULES,
@@ -26,6 +29,24 @@ const DEFAULT_PALETTE = {
   background: "#fafafa",
 } as const;
 
+/** Feature-section types each layout leans on (guidance, not a hard rule). */
+const LAYOUT_FEATURE_HINTS: Record<LayoutType, string> = {
+  "premium-service":
+    'feature_sections: 2 of ["highlights" (a signature treatment/service menu with 3-5 items), "reassurance" (a calm "your first visit" block)].',
+  "local-practical":
+    'feature_sections: 2-3 of ["checklist" (what every job/service includes, 4-6 concrete items), "service-area" (areas served / why the location is convenient), "steps" (how a job goes from call to done)].',
+  hospitality:
+    'feature_sections: 2 of ["highlights" (menu highlights grounded in reviews), "perfect-for" (occasions and visitors this place suits: breakfast meetings, family dinners, quick karak stops — only themes the reviews support)].',
+  "wellness-clinic":
+    'feature_sections: 2 of ["steps" (what to expect on a visit, 3-4 steps), "reassurance" (patient/first-visit reassurance grounded in review praise)].',
+  "creative-portfolio":
+    'feature_sections: 2 of ["steps" (the studio process from consultation to delivery), "highlights" (project or work categories)].',
+  "premium-professional":
+    'feature_sections: 2 of ["highlights" (practice/service areas, 3-5, sober one-line descriptions), "steps" (how an engagement works: consultation → assessment → representation/delivery)]. No success-rate or outcome claims.',
+  "simple-landing":
+    'feature_sections: at most 1 ["service-area"] or an empty array — keep this layout minimal.',
+};
+
 /** Layout-specific direction for the highlight_items / faq fields and tone. */
 const LAYOUT_GUIDANCE: Record<LayoutType, string> = {
   "premium-service":
@@ -38,6 +59,8 @@ const LAYOUT_GUIDANCE: Record<LayoutType, string> = {
     "Layout: calm, trust-first clinic/wellness site. highlight_items = 3-4 treatment or program categories grounded in the data. faq = 3-4 reassurance questions (first visit, booking, what to expect) answered honestly from known data, inviting contact where unknown. Tone: calm, clear, reassuring, clinical without being cold.",
   "creative-portfolio":
     "Layout: bold creative studio site. highlight_items = 3-4 work types or project categories the business handles (from data). Tone: confident, visual, short sentences, no corporate filler.",
+  "premium-professional":
+    "Layout: authority-first professional services site (law, real estate, consulting). highlight_items = 3-5 practice/service areas with sober one-line descriptions. faq = 3-4 client questions (consultation, fees approach WITHOUT amounts, process) answered honestly, inviting contact where unknown. Tone: measured, precise, confident without bravado; short declarative sentences; zero hype.",
   "simple-landing":
     "Layout: single-page local landing focused on call/WhatsApp/directions. Keep everything SHORT: about_section one paragraph, services 3 max, highlight_items empty, faq empty. Tone: plain, helpful, trustworthy.",
 };
@@ -45,8 +68,18 @@ const LAYOUT_GUIDANCE: Record<LayoutType, string> = {
 function buildSystemPrompt(
   websiteStyle: string,
   brief: DesignBriefJson | null,
-  layout: LayoutType
+  layout: LayoutType,
+  direction: CreativeDirectionJson | null
 ): string {
+  const directionBlock = direction
+    ? `CREATIVE DIRECTION (the copy must serve this design concept):
+- Concept: ${direction.creative_concept}
+- Visual mood: ${direction.visual_mood}
+- Signature design element: ${direction.signature_design_element}
+- Business-specific feature to write content for: ${direction.business_specific_feature}
+- Premium detail: ${direction.premium_detail}`
+    : "";
+
   const briefBlock = brief
     ? `WEBSITE DESIGN BRIEF (follow this direction precisely):
 - Identity: ${brief.business_identity}
@@ -69,9 +102,12 @@ function buildSystemPrompt(
 
 ${COPY_RULES}
 
+${directionBlock}
+
 ${briefBlock}
 
 ${LAYOUT_GUIDANCE[layout]}
+${LAYOUT_FEATURE_HINTS[layout]}
 
 VOICE RULES — the copy must never feel AI-generated:
 - BANNED phrases (never use any of these or close variants): ${GENERIC_AI_PHRASES.join("; ")}.
@@ -101,7 +137,8 @@ Respond with VALID JSON ONLY (no markdown, no commentary) matching EXACTLY this 
   "whatsapp_message": string — a natural message a customer would send, mentioning the business name,
   "booking_form_fields": string[] — 4-6 field labels appropriate to this trade,
   "highlight_items": [{ "title": string, "description": string }] — per the layout guidance above (empty array when not applicable),
-  "faq": [{ "question": string, "answer": string }] — per the layout guidance above (empty array when not applicable)
+  "faq": [{ "question": string, "answer": string }] — per the layout guidance above (empty array when not applicable),
+  "feature_sections": [{ "type": one of ${FEATURE_SECTION_TYPES.map((t) => `"${t}"`).join("|")}, "title": string — a specific section heading (never generic like "Our Features"), "intro": string — 1 sentence, "items": [{ "title": string, "description": string }] — 3-6 items }] — the business-specific sections per the feature guidance above; every item grounded in the data (checklist items may describe standard practice for the trade phrased as what the business offers to check/do, never invented specifics like prices or brands)
 }
 Every key is required. All colors are hex strings like "#1d4ed8".`;
 }
@@ -163,6 +200,18 @@ const copySchema = z.object({
     .catch([]),
   faq: z
     .array(z.object({ question: z.string(), answer: z.string().catch("") }))
+    .catch([]),
+  feature_sections: z
+    .array(
+      z.object({
+        type: z.enum(FEATURE_SECTION_TYPES as [FeatureSectionType, ...FeatureSectionType[]]).catch("highlights"),
+        title: z.string(),
+        intro: z.string().catch(""),
+        items: z
+          .array(z.object({ title: z.string(), description: z.string().catch("") }))
+          .catch([]),
+      })
+    )
     .catch([]),
 });
 
@@ -275,6 +324,20 @@ function finalizeCopy(
         answer: sanitizeCopy(f.answer).trim(),
       }))
       .filter((f) => f.question.length > 0 && f.answer.length > 0),
+    feature_sections: data.feature_sections
+      .map((s) => ({
+        type: s.type,
+        title: sanitizeCopy(s.title).trim(),
+        intro: sanitizeCopy(s.intro).trim(),
+        items: s.items
+          .map((i) => ({
+            title: sanitizeCopy(i.title).trim(),
+            description: sanitizeCopy(i.description).trim(),
+          }))
+          .filter((i) => i.title.length > 0),
+      }))
+      .filter((s) => s.title.length > 0 && s.items.length > 0)
+      .slice(0, 3),
   };
 }
 
@@ -284,6 +347,8 @@ export interface GenerateCopyOptions {
   websiteStyle: string;
   /** Design brief steering tone, claims, CTA, and SEO angle */
   brief?: DesignBriefJson | null;
+  /** Creative direction the copy must serve (concept, feature, detail) */
+  direction?: CreativeDirectionJson | null;
   /** Layout variant controlling highlight_items/faq guidance */
   layout?: LayoutType;
   /** Quality-gate critique for the improvement pass */
@@ -301,7 +366,12 @@ export async function generateWebsiteCopy(
   opts: GenerateCopyOptions
 ): Promise<WebsiteCopyJson> {
   const layout = opts.layout ?? "local-practical";
-  const system = buildSystemPrompt(opts.websiteStyle, opts.brief ?? null, layout);
+  const system = buildSystemPrompt(
+    opts.websiteStyle,
+    opts.brief ?? null,
+    layout,
+    opts.direction ?? null
+  );
   const user = buildUserPrompt(input, analysis, opts.critique);
 
   const raw = await chatJson<unknown>({

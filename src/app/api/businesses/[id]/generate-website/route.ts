@@ -30,15 +30,19 @@ import {
   selectLayout,
 } from "@/lib/website-builder/layout-select";
 import { buildNextJsProject } from "@/lib/website-builder/template";
+import { ensureUniqueness } from "@/lib/website-builder/uniqueness";
 import { toJsonField } from "@/lib/utils";
 import {
+  LAYOUT_TYPES,
   parseJsonField,
   type AnalysisJson,
+  type CreativeDirectionJson,
   type DesignBriefJson,
   type LayoutType,
   type QualityReportJson,
   type ResearchResult,
   type ReviewKeyword,
+  type UniquenessNotes,
   type VisualStyleJson,
   type WebsiteCopyJson,
 } from "@/lib/types";
@@ -49,6 +53,8 @@ export const runtime = "nodejs";
 
 const bodySchema = z.object({
   mode: z.enum(["full", "copy", "style"]).default("full"),
+  /** Optional explicit layout override (from the preview page's layout picker) */
+  layout: z.enum(LAYOUT_TYPES as [LayoutType, ...LayoutType[]]).optional(),
 });
 
 /** Rebuild an AnalysisJson from the Analysis row columns (fallback when rawJson is missing). */
@@ -77,6 +83,7 @@ export async function POST(
     const rawBody = await req.json().catch(() => ({}));
     const parsedBody = bodySchema.safeParse(rawBody ?? {});
     const mode = parsedBody.success ? parsedBody.data.mode : "full";
+    const layoutOverride = parsedBody.success ? parsedBody.data.layout : undefined;
 
     const business = await prisma.business.findUnique({
       where: { id: params.id },
@@ -153,8 +160,13 @@ export async function POST(
       });
     }
 
-    // ---- Steps 4+7: design brief + visual style (reused in copy mode) -----
+    // ---- Steps 4+7: creative direction + design brief + visual style ------
+    // (all reused in copy mode)
     const stored = business.website;
+    let direction = parseJsonField<CreativeDirectionJson | null>(
+      stored?.creativeDirection ?? null,
+      null
+    );
     let brief = parseJsonField<DesignBriefJson | null>(
       stored?.designBrief ?? null,
       null
@@ -163,15 +175,18 @@ export async function POST(
       stored?.visualStyle ?? null,
       null
     );
-    if (mode !== "copy" || !brief || !style) {
+    if (mode !== "copy" || !brief || !style || !direction) {
       const generated = await generateDesignBrief(input, analysisJson, research, ai);
+      direction = generated.direction;
       brief = generated.brief;
       style = generated.style;
     }
 
-    // ---- Step 5: layout selection (profile-driven, brief can recommend) ----
+    // ---- Step 5: layout selection (override > stored (copy mode) > brief) --
     let layout: LayoutType;
-    if (mode === "copy" && isLayoutType(stored?.layoutType)) {
+    if (layoutOverride) {
+      layout = layoutOverride;
+    } else if (mode === "copy" && isLayoutType(stored?.layoutType)) {
       layout = stored.layoutType;
     } else {
       layout = selectLayout({
@@ -194,6 +209,7 @@ export async function POST(
         ...ai,
         websiteStyle: settings.defaultWebsiteStyle,
         brief,
+        direction,
         layout,
       });
     }
@@ -217,6 +233,7 @@ export async function POST(
         ...ai,
         websiteStyle: settings.defaultWebsiteStyle,
         brief,
+        direction,
         layout,
         critique: report.improvement_instructions,
       });
@@ -234,6 +251,24 @@ export async function POST(
         break; // the rewrite got worse — keep the best draft we have
       }
     }
+
+    // ---- Uniqueness gate: no two sites share the same structural signature -
+    const others = await prisma.generatedWebsite.findMany({
+      where: { businessId: { not: business.id } },
+      select: { businessId: true, uniquenessNotes: true },
+    });
+    const existingSignatures = new Map<string, string>();
+    for (const other of others) {
+      const n = parseJsonField<UniquenessNotes | null>(other.uniquenessNotes, null);
+      if (n?.signature) existingSignatures.set(n.signature, other.businessId);
+    }
+    const { heroVariant, notes: uniqueness } = ensureUniqueness({
+      businessId: business.id,
+      layout,
+      style,
+      copy,
+      existingSignatures,
+    });
 
     // ---- Step 8: render preview + export project ---------------------------
     const businessBlock = {
@@ -253,6 +288,7 @@ export async function POST(
       brief,
       style,
       layout,
+      heroVariant,
     });
     const projectFiles = buildNextJsProject({
       business: businessBlock,
@@ -286,6 +322,8 @@ export async function POST(
       visualStyle: JSON.stringify(style),
       qualityScore: report.quality_score,
       qualityReport: JSON.stringify(report),
+      creativeDirection: JSON.stringify(direction),
+      uniquenessNotes: JSON.stringify(uniqueness),
     };
 
     const website = await prisma.generatedWebsite.upsert({

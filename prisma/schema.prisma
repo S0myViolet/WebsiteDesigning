@@ -134,6 +134,10 @@ model GeneratedWebsite {
   // Quality-gate result (0-100) and JSON-encoded QualityReportJson
   qualityScore         Int?
   qualityReport        String?
+  // JSON-encoded CreativeDirectionJson (the design concept for this business)
+  creativeDirection    String?
+  // JSON-encoded UniquenessNotes (structural-signature comparison result)
+  uniquenessNotes      String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

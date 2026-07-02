@@ -6,6 +6,7 @@ import { z } from "zod";
 import type {
   AnalysisJson,
   ConfidenceNote,
+  CreativeDirectionJson,
   DesignBriefJson,
   ResearchResult,
   VisualStyleJson,
@@ -38,11 +39,23 @@ DESIGN THINKING RULES:
 - Choose the customer action that matters most: book, call, WhatsApp, visit, reserve, request a quote, or get directions.
 - Colors must fit the trade and feel expensive, never garish. Dental/medical: calm blues/greens/neutrals. Luxury salon/spa: refined warm neutrals, soft contrast. Garage/practical: bold, confident, high-contrast. Cafe/restaurant: warm, appetizing. Law/real estate: dark, structured, authoritative.
 - recommended_layout_type MUST be exactly one of: ${LAYOUT_TYPES.join(", ")}.
-  premium-service = salons, spas, law, real estate, luxury services. local-practical = garages, cleaning, tailors, repair, small trades. hospitality = restaurants, cafes, food. wellness-clinic = clinics, dental, gyms, nurseries, health. creative-portfolio = interior design, events, studios. simple-landing = thin data, phone-first businesses.
+  premium-service = salons, spas, beauty, luxury services (editorial luxury). local-practical = garages, cleaning, tailors, repair, small trades (bold local service). hospitality = restaurants, cafes, food (warm hospitality). wellness-clinic = clinics, dental, gyms, nurseries, health (calm clinical). creative-portfolio = interior design, events, studios (portfolio showcase). premium-professional = law firms, real estate, consultants, corporate services (authority, structured, minimal). simple-landing = thin data, phone-first businesses (compact conversion).
+
+CREATIVE DIRECTION — invent ONE distinctive design concept for THIS business, the way an agency creative director would pitch it. It must go beyond "clean and modern": name a concrete visual idea (e.g. "a treatment-menu editorial like a boutique price card", "a diagnostic-report aesthetic with checklist rules", "a menu-board rhythm with dotted leaders and warm paper tones", "a case-file layout with numbered practice areas"). The signature_design_element is a SPECIFIC visual device the site is built around; business_specific_feature is a section idea unique to this trade (treatment menu preview, diagnostic checklist, first-visit reassurance, perfect-for occasions, process timeline, service-area map note); premium_detail is a small touch that signals professional design (microcopy under the CTA, numbered section kickers, a floating hours card, a review-themes strip); interaction_idea is a subtle behavior (sticky mobile call bar, hover-lift on service rows, gentle reveal on scroll). No two businesses should get the same concept wording.
 - content_confidence_notes: classify every important claim you expect the website to make. confidence values: profile (from the Google Business profile), reviews (from customer reviews), external (from a listed public source — include its name in "source"), inferred (from category+location), unknown (must not be claimed). Be honest; "unknown" entries are used to BLOCK claims.
 
 Respond with VALID JSON ONLY matching EXACTLY:
 {
+  "creative_direction": {
+    "creative_concept": string — the one-line design concept pitch,
+    "visual_mood": string,
+    "layout_personality": string,
+    "signature_design_element": string,
+    "business_specific_feature": string,
+    "premium_detail": string,
+    "interaction_idea": string,
+    "why_this_fits_the_business": string
+  },
   "design_brief": {
     "business_identity": string — 1-2 sentences: who this business is, grounded in evidence,
     "business_category": string,
@@ -142,7 +155,19 @@ const styleSchema = z.object({
   overall_feel: z.string().catch(""),
 });
 
+const creativeDirectionSchema = z.object({
+  creative_concept: z.string().min(1),
+  visual_mood: z.string().catch(""),
+  layout_personality: z.string().catch(""),
+  signature_design_element: z.string().min(1),
+  business_specific_feature: z.string().min(1),
+  premium_detail: z.string().catch(""),
+  interaction_idea: z.string().catch(""),
+  why_this_fits_the_business: z.string().catch(""),
+});
+
 const responseSchema = z.object({
+  creative_direction: creativeDirectionSchema,
   design_brief: briefSchema,
   visual_style: styleSchema,
 });
@@ -214,11 +239,24 @@ function cleanStrings(values: string[]): string[] {
 }
 
 function finalize(data: z.infer<typeof responseSchema>): {
+  direction: CreativeDirectionJson;
   brief: DesignBriefJson;
   style: VisualStyleJson;
 } {
   const b = data.design_brief;
   const s = data.visual_style;
+  const c = data.creative_direction;
+
+  const direction: CreativeDirectionJson = {
+    creative_concept: sanitizeCopy(c.creative_concept).trim(),
+    visual_mood: sanitizeCopy(c.visual_mood).trim(),
+    layout_personality: sanitizeCopy(c.layout_personality).trim(),
+    signature_design_element: sanitizeCopy(c.signature_design_element).trim(),
+    business_specific_feature: sanitizeCopy(c.business_specific_feature).trim(),
+    premium_detail: sanitizeCopy(c.premium_detail).trim(),
+    interaction_idea: sanitizeCopy(c.interaction_idea).trim(),
+    why_this_fits_the_business: sanitizeCopy(c.why_this_fits_the_business).trim(),
+  };
 
   const notes: ConfidenceNote[] = b.content_confidence_notes.map((n) => ({
     claim: sanitizeCopy(n.claim).trim(),
@@ -270,7 +308,7 @@ function finalize(data: z.infer<typeof responseSchema>): {
     overall_feel: sanitizeCopy(s.overall_feel).trim(),
   };
 
-  return { brief, style };
+  return { direction, brief, style };
 }
 
 /**
@@ -282,7 +320,11 @@ export async function generateDesignBrief(
   analysis: AnalysisJson,
   research: ResearchResult | null,
   opts: { apiKey: string; model: string }
-): Promise<{ brief: DesignBriefJson; style: VisualStyleJson }> {
+): Promise<{
+  direction: CreativeDirectionJson;
+  brief: DesignBriefJson;
+  style: VisualStyleJson;
+}> {
   const system = buildSystemPrompt();
   const user = buildUserPrompt(input, analysis, research);
 

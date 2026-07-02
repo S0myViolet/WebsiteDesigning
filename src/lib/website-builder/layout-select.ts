@@ -7,8 +7,8 @@ import { LAYOUT_TYPES, type LayoutType } from "@/lib/types";
 const CATEGORY_LAYOUTS: Record<string, LayoutType> = {
   Salons: "premium-service",
   Spas: "premium-service",
-  "Law firms": "premium-service",
-  "Real estate agencies": "premium-service",
+  "Law firms": "premium-professional",
+  "Real estate agencies": "premium-professional",
   Restaurants: "hospitality",
   Cafes: "hospitality",
   Gyms: "wellness-clinic",

@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  LayoutTemplate,
   Palette,
   RefreshCw,
   Wand2,
@@ -22,27 +23,33 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { SimpleDialog } from "@/components/ui/dialog";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { QualityScoreBadge } from "@/components/generate/quality-badge";
 import {
+  CreativeDirectionCard,
   DesignBriefCard,
   QualityReviewCard,
   SeoCard,
   SourcesCard,
+  UniquenessCard,
   VisualStyleCard,
 } from "@/components/generate/insight-cards";
 import { cn } from "@/lib/utils";
-import { LAYOUT_TYPE_LABELS } from "@/lib/types";
+import { LAYOUT_TYPES, LAYOUT_TYPE_LABELS, type LayoutType } from "@/lib/types";
 import type { BusinessDetail } from "@/lib/api-types";
 
 type GenerateMode = "full" | "copy" | "style";
+/** A user-triggered pipeline action: a regenerate mode or a layout switch. */
+type PipelineAction = GenerateMode | "layout";
 
-const MODE_LOADING_LABELS: Record<GenerateMode, string> = {
+const MODE_LOADING_LABELS: Record<PipelineAction, string> = {
   full: "Rethinking strategy…",
   copy: "Rewriting copy…",
   style: "Restyling…",
+  layout: "Switching layout…",
 };
 
 const CONFIRM_COPY: Record<
@@ -137,12 +144,16 @@ export default function GenerateWebsitePage() {
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [generatingMode, setGeneratingMode] =
-    React.useState<GenerateMode | null>(null);
+    React.useState<PipelineAction | null>(null);
   const [genError, setGenError] = React.useState<string | null>(null);
-  const [confirmMode, setConfirmMode] = React.useState<GenerateMode | null>(
+  const [confirmMode, setConfirmMode] = React.useState<PipelineAction | null>(
     null
   );
   const [stepIndex, setStepIndex] = React.useState(0);
+  /** Layout chosen in the picker; null = follow the website's current layout. */
+  const [selectedLayout, setSelectedLayout] = React.useState<LayoutType | null>(
+    null
+  );
 
   const fetchDetail = React.useCallback(async () => {
     try {
@@ -180,20 +191,25 @@ export default function GenerateWebsitePage() {
   }, [generatingMode]);
 
   const handleGenerate = React.useCallback(
-    async (mode: GenerateMode) => {
-      setGeneratingMode(mode);
+    async (action: PipelineAction, layout?: LayoutType) => {
+      setGeneratingMode(action);
       setGenError(null);
       try {
+        const body: { mode: GenerateMode; layout?: LayoutType } =
+          action === "layout"
+            ? { mode: "style", layout }
+            : { mode: action };
         const res = await fetch(`/api/businesses/${id}/generate-website`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode }),
+          body: JSON.stringify(body),
         });
         if (!res.ok) {
           setGenError(await readError(res));
           return;
         }
         await fetchDetail();
+        if (action === "layout") setSelectedLayout(null);
       } catch {
         setGenError("Network error — could not generate the website.");
       } finally {
@@ -241,7 +257,19 @@ export default function GenerateWebsitePage() {
   const website = business.website;
   const copy = website?.copy ?? null;
   const generating = generatingMode !== null;
-  const confirm = confirmMode ? CONFIRM_COPY[confirmMode] : null;
+  /** Layout shown in the picker: explicit choice, else the current layout. */
+  const layoutChoice: LayoutType =
+    selectedLayout ?? website?.layoutType ?? LAYOUT_TYPES[0];
+  const confirm =
+    confirmMode === null
+      ? null
+      : confirmMode === "layout"
+        ? {
+            title: "Switch the layout?",
+            body: `Regenerates the design in the ${LAYOUT_TYPE_LABELS[layoutChoice]} layout — the copy is kept.`,
+            action: "Apply layout",
+          }
+        : CONFIRM_COPY[confirmMode];
 
   const headerBadges = (
     <>
@@ -373,6 +401,37 @@ export default function GenerateWebsitePage() {
               ? MODE_LOADING_LABELS.style
               : "Change style"}
           </Button>
+          <div className="flex items-center gap-2">
+            <Select
+              aria-label="Layout variant"
+              value={layoutChoice}
+              onChange={(e) =>
+                setSelectedLayout(e.target.value as LayoutType)
+              }
+              disabled={generating}
+              className="w-auto"
+            >
+              {LAYOUT_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {LAYOUT_TYPE_LABELS[type]}
+                </option>
+              ))}
+            </Select>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmMode("layout")}
+              disabled={generating || layoutChoice === website.layoutType}
+            >
+              {generatingMode === "layout" ? (
+                <Spinner size="sm" />
+              ) : (
+                <LayoutTemplate />
+              )}
+              {generatingMode === "layout"
+                ? MODE_LOADING_LABELS.layout
+                : "Apply layout"}
+            </Button>
+          </div>
           <Link
             href={`/preview/${id}`}
             target="_blank"
@@ -410,10 +469,12 @@ export default function GenerateWebsitePage() {
 
         {/* RIGHT: insight panel (~40%) */}
         <div className="space-y-6 lg:col-span-2">
+          <CreativeDirectionCard direction={website.creativeDirection} />
           <QualityReviewCard
             score={website.qualityScore}
             report={website.qualityReport}
           />
+          <UniquenessCard notes={website.uniquenessNotes} />
           <DesignBriefCard brief={website.designBrief} />
           <VisualStyleCard style={website.visualStyle} />
           <SourcesCard
@@ -438,15 +499,22 @@ export default function GenerateWebsitePage() {
             </Button>
             <Button
               onClick={() => {
-                const mode = confirmMode;
+                const action = confirmMode;
                 setConfirmMode(null);
-                if (mode) void handleGenerate(mode);
+                if (action) {
+                  void handleGenerate(
+                    action,
+                    action === "layout" ? layoutChoice : undefined
+                  );
+                }
               }}
             >
               {confirmMode === "copy" ? (
                 <RefreshCw />
               ) : confirmMode === "style" ? (
                 <Palette />
+              ) : confirmMode === "layout" ? (
+                <LayoutTemplate />
               ) : (
                 <Wand2 />
               )}

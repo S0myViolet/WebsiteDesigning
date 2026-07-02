@@ -15,7 +15,7 @@ import { chatJson } from "@/lib/ai/openai-client";
 import { BANNED_PHRASES, findGenericPhrases } from "@/lib/ai/copy-rules";
 import type { BusinessAnalysisInput } from "@/lib/ai/analysis";
 
-export const QUALITY_THRESHOLD = 80;
+export const QUALITY_THRESHOLD = 85;
 
 function copyToPlainText(copy: WebsiteCopyJson): string {
   return [
@@ -39,8 +39,11 @@ const reviewSchema = z.object({
   quality_score: z.number().min(0).max(100),
   feels_specific: z.boolean().catch(false),
   tone_matches_category: z.boolean().catch(false),
+  hero_has_strong_idea: z.boolean().catch(false),
+  has_business_specific_features: z.boolean().catch(false),
   generic_phrases_found: z.array(z.string()).catch([]),
   unsupported_claims_found: z.array(z.string()).catch([]),
+  design_notes: z.array(z.string()).catch([]),
   issues: z
     .array(
       z.object({
@@ -54,30 +57,36 @@ const reviewSchema = z.object({
 });
 
 function buildSystemPrompt(): string {
-  return `You are a demanding creative director at a Dubai web agency reviewing a draft website before it is shown to a real business owner. You reject generic, AI-sounding, or unsupported work.
+  return `You are a demanding creative director at a Dubai web agency doing the final DESIGN QUALITY AUDIT of a draft website before it is shown to a real business owner. Your standard is "impressive", not "acceptable" — reject anything that reads like a default AI landing page.
 
 Score the draft 0-100 against this checklist:
-- Feels written for THIS specific business (its trade, area, reviewers' actual words) — not any-business filler. (heavily weighted)
-- Zero generic AI marketing phrasing ("experience excellence", "your trusted partner", "nestled in the heart of", "elevate", "unparalleled", "one-stop", "world-class" and the like).
+- Feels made for THIS specific business (its trade, area, reviewers' actual words) — not any-business filler. (heavily weighted)
+- The hero has a strong, specific idea: the headline names a concrete specialty or benefit a reviewer would recognize. "Welcome to X" or interchangeable slogans fail this.
+- The sections are chosen for this business type, and there are at least 2 genuinely business-specific feature sections (checklist, what-to-expect steps, first-visit reassurance, menu/practice highlights, perfect-for, service area) with concrete, non-filler items.
+- Zero generic AI marketing phrasing ("experience excellence", "your trusted partner", "nestled in the heart of", "elevate", "unparalleled", "one-stop", "world-class", "experience quality", "high-quality services" as a bare claim, and the like). Bland interchangeable sentences count even if no banned phrase appears.
 - Tone matches the category (a dental clinic must not read like a cafe; a garage must not read like a spa).
 - No unsupported claims: no invented prices, staff, awards, certifications, years in business, guarantees, "best/#1 in Dubai", or services that do not appear in the data.
-- CTAs match the action this business actually needs (book / call / WhatsApp / visit / quote).
+- CTAs match the action this business actually needs (book / call / WhatsApp / visit / quote), with sensible microcopy.
 - Copy is professional: concrete, concise, no emoji, no exclamation-heavy hype.
 - SEO title and meta description are specific (name + trade + area), not generic.
 - Testimonials are paraphrased themes, never verbatim quotes or reviewer names.
 - Nothing implies this is the official website of the business.
 
-Scoring guide: 90+ = ready to show a client; 80-89 = minor polish needed; 60-79 = noticeably generic or off-tone; below 60 = template-grade filler or contains unsupported claims.
+Scoring guide: 92+ = would impress a real owner as-is; 85-91 = client-ready with minor polish; 70-84 = competent but still reads templated in places; 50-69 = noticeably generic or off-tone; below 50 = filler or unsupported claims. Most first drafts should land 70-88 — reserve 92+ for genuinely sharp work.
 
-improvement_instructions: a numbered list of concrete rewrite instructions fixing every issue found (empty string only when the score is 90+).
+design_notes: 2-4 short observations about what makes (or would make) this feel custom-designed rather than generated.
+improvement_instructions: a numbered list of concrete rewrite instructions fixing every issue found (empty string only when the score is 92+).
 
 Respond with VALID JSON ONLY:
 {
   "quality_score": number,
   "feels_specific": boolean,
   "tone_matches_category": boolean,
+  "hero_has_strong_idea": boolean,
+  "has_business_specific_features": boolean,
   "generic_phrases_found": string[],
   "unsupported_claims_found": string[],
+  "design_notes": string[],
   "issues": [{ "area": string, "severity": "high"|"medium"|"low", "note": string }],
   "improvement_instructions": string
 }`;
@@ -154,6 +163,18 @@ function deterministicChecks(
     deduction += 5;
   }
 
+  const featureCount = (copy.feature_sections ?? []).filter(
+    (s) => s.items.length >= 2
+  ).length;
+  if (featureCount < 2) {
+    issues.push({
+      area: "design",
+      severity: "high",
+      note: `Only ${featureCount} substantial business-specific feature section(s) — the design standard requires at least 2 (checklist, steps, reassurance, highlights, perfect-for, or service-area).`,
+    });
+    deduction += 10;
+  }
+
   return { issues, genericFound, bannedFound, deduction };
 }
 
@@ -184,8 +205,11 @@ export async function reviewWebsiteQuality(
         quality_score: 70,
         feels_specific: false,
         tone_matches_category: false,
+        hero_has_strong_idea: false,
+        has_business_specific_features: false,
         generic_phrases_found: [],
         unsupported_claims_found: [],
+        design_notes: [],
         issues: [
           {
             area: "review",
@@ -216,6 +240,9 @@ export async function reviewWebsiteQuality(
     quality_score: score,
     feels_specific: ai.feels_specific,
     tone_matches_category: ai.tone_matches_category,
+    hero_has_strong_idea: ai.hero_has_strong_idea,
+    has_business_specific_features: ai.has_business_specific_features,
+    design_notes: ai.design_notes,
     generic_phrases_found: Array.from(
       new Set([...ai.generic_phrases_found, ...det.genericFound])
     ),

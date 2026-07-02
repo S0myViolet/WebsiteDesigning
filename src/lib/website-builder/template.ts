@@ -2,7 +2,7 @@
 // as a Record<filePath, fileContent>. The result is stored JSON-encoded in
 // GeneratedWebsite.generatedCode and zipped for download via zip.ts.
 //
-// The export mirrors the six in-dashboard preview variants (layouts.ts): the
+// The export mirrors the seven in-dashboard preview variants (layouts.ts): the
 // layout type picks a structurally different page component, and the visual
 // style (6-color palette, typography direction, button shape, section
 // spacing) is derived into typed style tokens that are wired into the
@@ -16,7 +16,7 @@
 // Google rating / review count is intentionally never included in the export
 // (Maps content policy).
 
-import type { LayoutType, VisualStyleJson } from "@/lib/types";
+import type { FeatureSection, LayoutType, VisualStyleJson } from "@/lib/types";
 import { LAYOUT_TYPE_LABELS } from "@/lib/types";
 import type { PreviewInput } from "./preview-html";
 import { selectLayout } from "./layout-select";
@@ -91,6 +91,14 @@ const LAYOUT_COLOR_FALLBACKS: Record<LayoutType, StyleColors> = {
     surface: "#ffffff",
     text: "#111111",
   },
+  "premium-professional": {
+    primary: "#1e3a5f",
+    secondary: "#0f1f33",
+    accent: "#b08d57",
+    background: "#f7f8fa",
+    surface: "#ffffff",
+    text: "#16222f",
+  },
   "simple-landing": {
     primary: "#1d4ed8",
     secondary: "#1e3a5f",
@@ -160,7 +168,9 @@ function deriveStyleTokens(
       !/sans/i.test(style.typography.heading_style)
       ? "serif"
       : "sans"
-    : layout === "premium-service" || layout === "hospitality"
+    : layout === "premium-service" ||
+        layout === "hospitality" ||
+        layout === "premium-professional"
       ? "serif"
       : "sans";
 
@@ -291,6 +301,7 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
       whatsappMessage: copy.whatsapp_message ?? "",
       bookingFormFields: asArray(copy.booking_form_fields),
       imageRecommendations: asArray(copy.image_recommendations),
+      featureSections: asArray(copy.feature_sections).slice(0, 3),
     },
     style: {
       colors: tokens.colors,
@@ -451,6 +462,7 @@ interface SiteConfigData {
     whatsappMessage: string;
     bookingFormFields: string[];
     imageRecommendations: string[];
+    featureSections: FeatureSection[];
   };
   style: {
     colors: StyleColors;
@@ -479,6 +491,7 @@ export type SiteLayout =
   | "hospitality"
   | "wellness-clinic"
   | "creative-portfolio"
+  | "premium-professional"
   | "simple-landing";
 
 export interface SiteService {
@@ -489,6 +502,22 @@ export interface SiteService {
 export interface SiteFaqItem {
   question: string;
   answer: string;
+}
+
+export type SiteFeatureSectionType =
+  | "checklist"
+  | "steps"
+  | "reassurance"
+  | "perfect-for"
+  | "highlights"
+  | "service-area";
+
+/** Business-specific feature section rendered by the shared FeatureSections component. */
+export interface SiteFeatureSection {
+  type: SiteFeatureSectionType;
+  title: string;
+  intro: string;
+  items: SiteService[];
 }
 
 export interface SiteConfig {
@@ -523,6 +552,8 @@ export interface SiteConfig {
     bookingFormFields: string[];
     /** Photo ideas for replacing the gradient placeholder panels. */
     imageRecommendations: string[];
+    /** Business-specific feature sections (checklist, steps, reassurance...). */
+    featureSections: SiteFeatureSection[];
   };
   /** Style tokens derived from the AI visual style (wired into Tailwind). */
   style: {
@@ -714,17 +745,81 @@ export function DraftBanner() {
 }
 `;
 
-const SITE_FOOTER_TSX = `import { SITE } from "@/config/site";
+const SITE_FOOTER_TSX = `// Premium multi-column footer: brand | contact links | visit details, plus
+// the permanent draft-disclaimer bar. Fully data-driven from SITE.
+import { SITE } from "@/config/site";
 
 export function SiteFooter() {
+  const { business, copy, links } = SITE;
+  const weekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  const todayHours =
+    business.openingHours.find((line) => line.startsWith(weekday)) ?? null;
+  const linkClass = "font-semibold text-primary underline-offset-4 hover:underline";
   return (
-    <footer className="border-t border-text/10 bg-surface px-5 py-10">
-      <div className="mx-auto max-w-6xl text-center">
-        <p className="text-base font-semibold">
-          {SITE.business.name}
-          {SITE.business.area ? " \\u00B7 " + SITE.business.area : ""}
-        </p>
-        <p className="mx-auto mt-3 max-w-2xl text-xs leading-relaxed text-text/60">
+    <footer className="border-t border-text/10 bg-surface">
+      <div className="mx-auto grid max-w-6xl gap-9 px-5 py-12 md:grid-cols-3">
+        <div>
+          <p className="font-heading text-lg font-bold">{business.name}</p>
+          <p className="mt-1 text-sm text-text/60">
+            {business.category}
+            {business.area ? " \\u00B7 " + business.area : ""}
+          </p>
+          {copy.seoMetaDescription ? (
+            <p className="mt-3 max-w-xs text-sm leading-relaxed text-text/60">
+              {copy.seoMetaDescription}
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-text/50">
+            Contact
+          </p>
+          <div className="mt-3 space-y-2 text-sm">
+            {business.phone && links.telUrl ? (
+              <p>
+                <a href={links.telUrl} aria-label="Call us by phone" className={linkClass}>
+                  {business.phone}
+                </a>
+              </p>
+            ) : null}
+            {links.whatsappUrl ? (
+              <p>
+                <a
+                  href={links.whatsappUrl}
+                  aria-label="Message us on WhatsApp"
+                  className={linkClass}
+                >
+                  WhatsApp
+                </a>
+              </p>
+            ) : null}
+            {links.mapsUrl ? (
+              <p>
+                <a
+                  href={links.mapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Open our profile on Google Maps"
+                  className={linkClass}
+                >
+                  Google Maps
+                </a>
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-text/50">
+            Visit
+          </p>
+          <div className="mt-3 space-y-2 text-sm leading-relaxed text-text/60">
+            {business.address ? <p>{business.address}</p> : null}
+            {todayHours ? <p>{todayHours}</p> : null}
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-text/10 bg-background">
+        <p className="mx-auto max-w-6xl px-5 py-4 text-xs leading-relaxed text-text/60">
           {SITE.disclaimer}
         </p>
       </div>
@@ -735,6 +830,7 @@ export function SiteFooter() {
 
 const SHARED_TSX = `// Shared, fully data-driven building blocks used by the layout page
 // component. All content comes from SITE (src/config/site.ts).
+import type { SiteFeatureSection } from "@/config/site";
 import { SITE } from "@/config/site";
 
 export function CtaButtons({
@@ -934,6 +1030,335 @@ export function DemoForm({ heading }: { heading: string }) {
     </form>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Business-specific feature sections (shared across all layouts)
+// ---------------------------------------------------------------------------
+
+function FeatureKicker({ label }: { label: string }) {
+  return (
+    <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">{label}</p>
+  );
+}
+
+function FeatureChecklist({
+  section,
+  headingId,
+}: {
+  section: SiteFeatureSection;
+  headingId: string;
+}) {
+  return (
+    <section aria-labelledby={headingId} className="px-5 py-section">
+      <div className="mx-auto max-w-6xl rounded-2xl border border-text/10 bg-surface p-8 shadow-sm md:p-10">
+        <FeatureKicker label="Included" />
+        <h2 id={headingId} className="mt-2 text-3xl font-bold">
+          {section.title}
+        </h2>
+        {section.intro ? (
+          <p className="mt-3 max-w-2xl leading-relaxed text-text/70">{section.intro}</p>
+        ) : null}
+        <ul className="mt-7 grid gap-5 sm:grid-cols-2">
+          {section.items.map((item) => (
+            <li key={item.title} className="flex items-start gap-3">
+              <span
+                aria-hidden="true"
+                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
+              >
+                {"\\u2713"}
+              </span>
+              <span>
+                <span className="block font-semibold">{item.title}</span>
+                {item.description ? (
+                  <span className="text-sm leading-relaxed text-text/60">
+                    {item.description}
+                  </span>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+function FeatureSteps({
+  section,
+  headingId,
+}: {
+  section: SiteFeatureSection;
+  headingId: string;
+}) {
+  return (
+    <section aria-labelledby={headingId} className="px-5 py-section">
+      <div className="mx-auto max-w-3xl">
+        <FeatureKicker label="How it works" />
+        <h2 id={headingId} className="mt-2 text-3xl font-bold">
+          {section.title}
+        </h2>
+        {section.intro ? (
+          <p className="mt-3 leading-relaxed text-text/70">{section.intro}</p>
+        ) : null}
+        <ol className="ml-4 mt-9">
+          {section.items.map((item, index) => (
+            <li
+              key={item.title}
+              className="relative border-l-2 border-primary/25 pb-8 pl-8 last:border-transparent last:pb-0"
+            >
+              <span
+                aria-hidden="true"
+                className="absolute -left-4 top-0 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-white"
+              >
+                {index + 1}
+              </span>
+              <h3 className="pt-0.5 text-lg font-semibold">{item.title}</h3>
+              {item.description ? (
+                <p className="mt-1 text-sm leading-relaxed text-text/70">
+                  {item.description}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function FeatureReassurance({
+  section,
+  headingId,
+}: {
+  section: SiteFeatureSection;
+  headingId: string;
+}) {
+  return (
+    <section aria-labelledby={headingId} className="px-5 py-section">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-text/10 bg-gradient-to-br from-primary/10 via-background to-accent/10 p-8 md:p-10">
+        <FeatureKicker label="Good to know" />
+        <h2 id={headingId} className="mt-2 text-3xl font-bold">
+          {section.title}
+        </h2>
+        {section.intro ? (
+          <p className="mt-3 text-lg font-semibold leading-relaxed">{section.intro}</p>
+        ) : null}
+        <div className="mt-6 grid gap-5 sm:grid-cols-2">
+          {section.items.map((item) => (
+            <div key={item.title}>
+              <p className="font-semibold">{item.title}</p>
+              {item.description ? (
+                <p className="mt-1 text-sm leading-relaxed text-text/70">
+                  {item.description}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeaturePerfectFor({
+  section,
+  headingId,
+}: {
+  section: SiteFeatureSection;
+  headingId: string;
+}) {
+  return (
+    <section aria-labelledby={headingId} className="px-5 py-section">
+      <div className="mx-auto max-w-6xl">
+        <FeatureKicker label="Come here for" />
+        <h2 id={headingId} className="mt-2 text-3xl font-bold">
+          {section.title}
+        </h2>
+        {section.intro ? (
+          <p className="mt-3 max-w-2xl leading-relaxed text-text/70">{section.intro}</p>
+        ) : null}
+        <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {section.items.map((item) => (
+            <div
+              key={item.title}
+              className="rounded-xl border border-text/10 border-t-4 border-t-accent bg-surface p-6"
+            >
+              <p className="font-semibold">{item.title}</p>
+              {item.description ? (
+                <p className="mt-1.5 text-sm leading-relaxed text-text/70">
+                  {item.description}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeatureHighlights({
+  section,
+  headingId,
+}: {
+  section: SiteFeatureSection;
+  headingId: string;
+}) {
+  return (
+    <section aria-labelledby={headingId} className="px-5 py-section">
+      <div className="mx-auto max-w-3xl">
+        <FeatureKicker label="Highlights" />
+        <h2 id={headingId} className="mt-2 text-3xl font-bold">
+          {section.title}
+        </h2>
+        {section.intro ? (
+          <p className="mt-3 leading-relaxed text-text/70">{section.intro}</p>
+        ) : null}
+        <div className="mt-6">
+          {section.items.map((item) => (
+            <div
+              key={item.title}
+              className="border-b border-text/10 py-4 last:border-b-0"
+            >
+              <div className="flex items-baseline gap-3">
+                <h3 className="whitespace-nowrap text-lg font-semibold">{item.title}</h3>
+                <span
+                  aria-hidden="true"
+                  className="-translate-y-1 flex-1 border-b-2 border-dotted border-text/30"
+                />
+              </div>
+              {item.description ? (
+                <p className="mt-1 text-sm leading-relaxed text-text/70">
+                  {item.description}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeatureServiceArea({
+  section,
+  headingId,
+}: {
+  section: SiteFeatureSection;
+  headingId: string;
+}) {
+  const { business } = SITE;
+  return (
+    <section aria-labelledby={headingId} className="px-5 py-section">
+      <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[1.2fr_0.8fr]">
+        <div>
+          <FeatureKicker label="Where we work" />
+          <h2 id={headingId} className="mt-2 text-3xl font-bold">
+            {section.title}
+          </h2>
+          {section.intro ? (
+            <p className="mt-3 max-w-xl leading-relaxed text-text/70">{section.intro}</p>
+          ) : null}
+          <div className="mt-6 flex flex-wrap gap-2.5">
+            {section.items.map((item) => (
+              <span
+                key={item.title}
+                title={item.description}
+                className="rounded-full border border-primary/30 bg-primary/5 px-4 py-1.5 text-sm font-semibold"
+              >
+                {item.title}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="self-start rounded-xl border border-text/10 bg-surface p-6">
+          <p className="font-semibold">Based in {business.area ?? "Dubai"}</p>
+          <p className="mt-1 text-sm leading-relaxed text-text/60">
+            {business.address ?? "Contact us for directions."}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Renders SITE.copy.featureSections (max 3) with a treatment per type.
+ * Placed after the services/menu/work section in every layout.
+ */
+export function FeatureSections() {
+  const sections = SITE.copy.featureSections.slice(0, 3);
+  if (sections.length === 0) return null;
+  return (
+    <>
+      {sections.map((section, index) => {
+        const key = section.type + "-" + index;
+        const headingId = "feature-heading-" + index;
+        switch (section.type) {
+          case "checklist":
+            return <FeatureChecklist key={key} section={section} headingId={headingId} />;
+          case "steps":
+            return <FeatureSteps key={key} section={section} headingId={headingId} />;
+          case "reassurance":
+            return (
+              <FeatureReassurance key={key} section={section} headingId={headingId} />
+            );
+          case "perfect-for":
+            return (
+              <FeaturePerfectFor key={key} section={section} headingId={headingId} />
+            );
+          case "service-area":
+            return (
+              <FeatureServiceArea key={key} section={section} headingId={headingId} />
+            );
+          case "highlights":
+          default:
+            return (
+              <FeatureHighlights key={key} section={section} headingId={headingId} />
+            );
+        }
+      })}
+    </>
+  );
+}
+
+/**
+ * Sticky mobile contact bar: fixed to the bottom on small screens only.
+ * The spacer div keeps page content from being hidden behind the bar.
+ */
+export function StickyContactBar() {
+  const { links } = SITE;
+  if (!links.telUrl && !links.whatsappUrl) return null;
+  return (
+    <>
+      <div aria-hidden="true" className="h-16 md:hidden" />
+      <div
+        role="complementary"
+        aria-label="Quick contact"
+        className="fixed inset-x-0 bottom-0 z-50 flex border-t border-text/10 bg-surface shadow-[0_-4px_16px_rgba(0,0,0,0.12)] md:hidden"
+      >
+        {links.telUrl ? (
+          <a
+            href={links.telUrl}
+            aria-label="Call now"
+            className="flex flex-1 items-center justify-center bg-secondary py-4 text-base font-bold text-white"
+          >
+            Call
+          </a>
+        ) : null}
+        {links.whatsappUrl ? (
+          <a
+            href={links.whatsappUrl}
+            aria-label="Message on WhatsApp"
+            className="flex flex-1 items-center justify-center bg-[#16a34a] py-4 text-base font-bold text-white"
+          >
+            WhatsApp
+          </a>
+        ) : null}
+      </div>
+    </>
+  );
+}
 `;
 
 // ---------------------------------------------------------------------------
@@ -943,7 +1368,13 @@ export function DemoForm({ heading }: { heading: string }) {
 
 const PREMIUM_SERVICE_TSX = `// Premium service layout: sticky top nav, split hero with a decorative
 // monogram panel, numbered signature list, editorial bands, pull quotes.
-import { CtaButtons, HoursList, MapEmbed, PullQuotes } from "@/components/Shared";
+import {
+  CtaButtons,
+  FeatureSections,
+  HoursList,
+  MapEmbed,
+  PullQuotes,
+} from "@/components/Shared";
 import { SITE } from "@/config/site";
 
 export function PremiumServicePage() {
@@ -1024,6 +1455,7 @@ export function PremiumServicePage() {
             </div>
           </div>
         </section>
+        <FeatureSections />
         <section
           id="about"
           aria-labelledby="about-heading"
@@ -1103,6 +1535,7 @@ import {
   CtaButtons,
   DemoForm,
   Faq,
+  FeatureSections,
   HoursList,
   MapEmbed,
   TestimonialCards,
@@ -1184,6 +1617,7 @@ export function LocalPracticalPage() {
             </div>
           </div>
         </section>
+        <FeatureSections />
         <section id="why" aria-labelledby="why-heading" className="bg-primary/5 px-5 py-section">
           <div className="mx-auto max-w-6xl">
             <h2 id="why-heading" className="text-3xl font-bold">
@@ -1239,7 +1673,13 @@ export function LocalPracticalPage() {
 
 const HOSPITALITY_TSX = `// Hospitality layout: centered hero with kicker and ornament divider, menu
 // highlights with dotted leaders, visit-us split, warm gradient CTA band.
-import { CtaButtons, HoursList, MapEmbed, TestimonialCards } from "@/components/Shared";
+import {
+  CtaButtons,
+  FeatureSections,
+  HoursList,
+  MapEmbed,
+  TestimonialCards,
+} from "@/components/Shared";
 import { SITE } from "@/config/site";
 
 export function HospitalityPage() {
@@ -1299,6 +1739,7 @@ export function HospitalityPage() {
             </div>
           </div>
         </section>
+        <FeatureSections />
         <section id="about" aria-labelledby="about-heading" className="px-5 py-section text-center">
           <div className="mx-auto max-w-4xl">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Our place</p>
@@ -1356,6 +1797,7 @@ import {
   CtaButtons,
   DemoForm,
   Faq,
+  FeatureSections,
   HoursList,
   MapEmbed,
   TestimonialCards,
@@ -1424,6 +1866,7 @@ export function WellnessClinicPage() {
             </div>
           </div>
         </section>
+        <FeatureSections />
         <section id="about" aria-labelledby="about-heading" className="px-5 py-section">
           <div className="mx-auto grid max-w-6xl gap-9 md:grid-cols-2">
             <div>
@@ -1479,7 +1922,13 @@ export function WellnessClinicPage() {
 
 const CREATIVE_PORTFOLIO_TSX = `// Creative portfolio layout: oversized display headline with an accent rule
 // and service chips, alternating gradient work rows, full-bleed dark CTA.
-import { CtaButtons, HoursList, MapEmbed, PullQuotes } from "@/components/Shared";
+import {
+  CtaButtons,
+  FeatureSections,
+  HoursList,
+  MapEmbed,
+  PullQuotes,
+} from "@/components/Shared";
 import { SITE } from "@/config/site";
 
 const PANEL_CLASSES = [
@@ -1564,6 +2013,7 @@ export function CreativePortfolioPage() {
             </div>
           </div>
         </section>
+        <FeatureSections />
         <section
           id="about"
           aria-labelledby="about-heading"
@@ -1620,9 +2070,187 @@ export function CreativePortfolioPage() {
 }
 `;
 
+const PREMIUM_PROFESSIONAL_TSX = `// Premium professional layout (law firms, real estate, consultants): dark
+// top nav with an accent consultation CTA, dark hero with a numbered
+// practice-area index, review-themes strip, numbered practice rows, FAQ,
+// dark consultation band with a demo form, then location and hours.
+import {
+  CtaButtons,
+  DemoForm,
+  Faq,
+  FeatureSections,
+  HoursList,
+  MapEmbed,
+  PullQuotes,
+} from "@/components/Shared";
+import { SITE } from "@/config/site";
+
+export function PremiumProfessionalPage() {
+  const { business, copy, links } = SITE;
+  const areas = (
+    copy.highlightItems.length > 0 ? copy.highlightItems : copy.services
+  ).slice(0, 5);
+  const themes = copy.whyChooseUs.slice(0, 3);
+  return (
+    <>
+      <nav aria-label="Main" className="bg-secondary">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4">
+          <a href="#top" className="font-heading text-lg font-bold tracking-wide text-white">
+            {business.name}
+          </a>
+          <a
+            href={links.whatsappUrl ?? links.telUrl ?? "#contact"}
+            aria-label={links.whatsappUrl ? "Contact us on WhatsApp" : "Contact us"}
+            className="rounded-btn bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+          >
+            {copy.ctaText}
+          </a>
+        </div>
+      </nav>
+      <header id="top" className="bg-secondary px-5 py-section text-white">
+        <div className="mx-auto grid max-w-6xl items-center gap-11 md:grid-cols-[1.15fr_0.85fr]">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">
+              {business.category}
+              {business.area ? " \\u00B7 " + business.area : ""}
+            </p>
+            <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight text-white md:text-5xl">
+              {copy.headline}
+            </h1>
+            <p className="mt-4 max-w-lg text-lg leading-relaxed text-white/70">
+              {copy.subheadline}
+            </p>
+            <div className="mt-8">
+              <CtaButtons secondaryLabel="Call the office" onDark />
+            </div>
+            <p className="mt-3 text-xs text-white/50">Enquiries are confidential.</p>
+          </div>
+          <nav aria-label="Practice areas" className="border-l border-white/20 pl-7">
+            {areas.map((area, index) => (
+              <a
+                key={area.title}
+                href="#practice"
+                className="flex items-baseline gap-4 border-b border-white/10 py-3.5 text-white transition-all last:border-b-0 hover:pl-2"
+              >
+                <span
+                  aria-hidden="true"
+                  className="text-xs font-bold tracking-widest text-accent"
+                >
+                  {"0" + (index + 1)}
+                </span>
+                <span className="font-heading text-lg">{area.title}</span>
+              </a>
+            ))}
+          </nav>
+        </div>
+      </header>
+      {themes.length > 0 ? (
+        <div aria-label="What reviewers mention" className="border-b border-text/10 bg-surface">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-1.5 px-5 py-4 text-sm">
+            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
+              From the reviews
+            </span>
+            {themes.map((theme, index) => (
+              <span key={theme} className="flex items-center gap-4 font-medium text-text/70">
+                {index > 0 ? (
+                  <span aria-hidden="true" className="text-primary/40">
+                    {"\\u2022"}
+                  </span>
+                ) : null}
+                {theme}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <main>
+        <section id="practice" aria-labelledby="practice-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-6xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Practice</p>
+            <h2 id="practice-heading" className="mt-2 text-3xl font-bold">
+              Areas of work
+            </h2>
+            <div className="mt-7 divide-y divide-text/10 border-y border-text/10">
+              {areas.map((area, index) => (
+                <div key={area.title} className="grid grid-cols-[56px_1fr] gap-5 py-6">
+                  <span
+                    aria-hidden="true"
+                    className="pt-1.5 text-xs font-bold tracking-widest text-accent"
+                  >
+                    {"0" + (index + 1)}
+                  </span>
+                  <div>
+                    <h3 className="text-xl font-semibold">{area.title}</h3>
+                    <p className="mt-1 max-w-2xl text-[15px] leading-relaxed text-text/70">
+                      {area.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <FeatureSections />
+        <section id="about" aria-labelledby="about-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-3xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">The firm</p>
+            <h2 id="about-heading" className="mt-2 text-3xl font-bold">
+              About {business.name}
+            </h2>
+            <p className="mt-4 whitespace-pre-line leading-relaxed text-text/70">{copy.about}</p>
+            <div className="mt-9">
+              <PullQuotes />
+            </div>
+          </div>
+        </section>
+        <Faq />
+        <section
+          id="contact"
+          aria-labelledby="contact-heading"
+          className="bg-secondary px-5 py-section text-white"
+        >
+          <div className="mx-auto grid max-w-6xl gap-9 md:grid-cols-2">
+            <div>
+              <h2 id="contact-heading" className="text-3xl font-bold text-white">
+                {copy.ctaText}
+              </h2>
+              <p className="mt-4 leading-relaxed text-white/70">{copy.contactSection}</p>
+              <div className="mt-7">
+                <CtaButtons secondaryLabel={business.phone ?? "Call us"} onDark />
+              </div>
+            </div>
+            <DemoForm heading="Request a consultation" />
+          </div>
+        </section>
+        <section id="visit" aria-labelledby="visit-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-6xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Office</p>
+            <h2 id="visit-heading" className="mt-2 text-3xl font-bold">
+              Location and hours
+            </h2>
+            <div className="mt-7 grid gap-9 md:grid-cols-2">
+              <MapEmbed />
+              <div className="self-start rounded-xl border border-text/10 bg-surface p-6">
+                <h3 className="mb-2 text-lg font-semibold">Office hours</h3>
+                <HoursList />
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </>
+  );
+}
+`;
+
 const SIMPLE_LANDING_TSX = `// Simple local landing layout: narrow single column, giant contact actions,
 // short about, tick service list, hours, and a map.
-import { HoursList, MapEmbed, TestimonialCards } from "@/components/Shared";
+import {
+  FeatureSections,
+  HoursList,
+  MapEmbed,
+  TestimonialCards,
+} from "@/components/Shared";
 import { SITE } from "@/config/site";
 
 export function SimpleLandingPage() {
@@ -1714,6 +2342,7 @@ export function SimpleLandingPage() {
             <TestimonialCards />
           </section>
         ) : null}
+        <FeatureSections />
         <section id="hours" aria-labelledby="hours-heading" className="border-t border-text/10 py-10">
           <h2 id="hours-heading" className="text-2xl font-bold">
             Opening hours
@@ -1778,6 +2407,12 @@ const LAYOUT_MODULES: Record<LayoutType, LayoutModule> = {
     importPath: "@/components/layouts/CreativePortfolio",
     source: CREATIVE_PORTFOLIO_TSX,
   },
+  "premium-professional": {
+    file: "src/components/layouts/PremiumProfessional.tsx",
+    component: "PremiumProfessionalPage",
+    importPath: "@/components/layouts/PremiumProfessional",
+    source: PREMIUM_PROFESSIONAL_TSX,
+  },
   "simple-landing": {
     file: "src/components/layouts/SimpleLanding.tsx",
     component: "SimpleLandingPage",
@@ -1786,9 +2421,13 @@ const LAYOUT_MODULES: Record<LayoutType, LayoutModule> = {
   },
 };
 
-/** page.tsx: draft banner + the selected layout page + shared footer. */
+/**
+ * page.tsx: draft banner + the selected layout page + shared footer + the
+ * mobile sticky contact bar (renders null when no phone links exist).
+ */
 function buildPageTsx(mod: LayoutModule): string {
   return `import { DraftBanner } from "@/components/DraftBanner";
+import { StickyContactBar } from "@/components/Shared";
 import { SiteFooter } from "@/components/SiteFooter";
 import { ${mod.component} } from "${mod.importPath}";
 
@@ -1798,6 +2437,7 @@ export default function HomePage() {
       <DraftBanner />
       <${mod.component} />
       <SiteFooter />
+      <StickyContactBar />
     </>
   );
 }

@@ -14,9 +14,11 @@ import { cn } from "@/lib/utils";
 import {
   CLAIM_CONFIDENCE_LABELS,
   type ClaimConfidence,
+  type CreativeDirectionJson,
   type DesignBriefJson,
   type QualityReportJson,
   type ResearchResult,
+  type UniquenessNotes,
   type VisualStyleJson,
   type WebsiteCopyJson,
 } from "@/lib/types";
@@ -92,6 +94,61 @@ function MutedRow({ label, value }: { label: string; value: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// 0. Creative direction
+// ---------------------------------------------------------------------------
+
+export function CreativeDirectionCard({
+  direction,
+}: {
+  direction: CreativeDirectionJson | null;
+}) {
+  return (
+    <InsightCard
+      title="Creative direction"
+      description="The design concept invented for this business"
+    >
+      {!direction ? (
+        <p className="text-muted-foreground">
+          No creative direction recorded — this draft predates the
+          creative-direction step. Regenerate the design to create one.
+        </p>
+      ) : (
+        <>
+          <p className="font-medium leading-relaxed">
+            {direction.creative_concept}
+          </p>
+
+          <div className="divide-y divide-border">
+            <MutedRow label="Visual mood" value={direction.visual_mood} />
+            <MutedRow
+              label="Layout personality"
+              value={direction.layout_personality}
+            />
+            <MutedRow
+              label="Signature design element"
+              value={direction.signature_design_element}
+            />
+            <MutedRow
+              label="Business-specific feature"
+              value={direction.business_specific_feature}
+            />
+            <MutedRow label="Premium detail" value={direction.premium_detail} />
+            <MutedRow
+              label="Interaction idea"
+              value={direction.interaction_idea}
+            />
+          </div>
+
+          <p className="text-muted-foreground">
+            {direction.why_this_fits_the_business}
+          </p>
+        </>
+      )}
+    </InsightCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 1. Quality review
 // ---------------------------------------------------------------------------
 
@@ -163,6 +220,18 @@ export function QualityReviewCard({
                   pass={report.tone_matches_category}
                   label="Tone matches the category"
                 />
+                {report.hero_has_strong_idea !== undefined && (
+                  <CheckRow
+                    pass={report.hero_has_strong_idea}
+                    label="Hero has a strong idea"
+                  />
+                )}
+                {report.has_business_specific_features !== undefined && (
+                  <CheckRow
+                    pass={report.has_business_specific_features}
+                    label="Business-specific features present"
+                  />
+                )}
               </div>
 
               {report.generic_phrases_found.length > 0 && (
@@ -222,7 +291,64 @@ export function QualityReviewCard({
                   </ul>
                 </Field>
               )}
+
+              {report.design_notes && report.design_notes.length > 0 && (
+                <Field label="Designer notes">
+                  <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                    {report.design_notes.map((note, i) => (
+                      <li key={`${note}-${i}`}>{note}</li>
+                    ))}
+                  </ul>
+                </Field>
+              )}
             </>
+          )}
+        </>
+      )}
+    </InsightCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 1b. Uniqueness
+// ---------------------------------------------------------------------------
+
+export function UniquenessCard({ notes }: { notes: UniquenessNotes | null }) {
+  return (
+    <InsightCard
+      title="Uniqueness"
+      description="Structural comparison against other generated sites"
+    >
+      {!notes ? (
+        <p className="text-muted-foreground">
+          No uniqueness check recorded — this draft predates the uniqueness
+          gate. Regenerate the design to run it.
+        </p>
+      ) : (
+        <>
+          <div>
+            <Badge variant="outline" className="font-normal">
+              Hero treatment {notes.heroVariant}
+            </Badge>
+          </div>
+
+          <p className="text-muted-foreground">{notes.notes}</p>
+
+          {notes.adjustments.length > 0 && (
+            <Field label="Adjustments made">
+              <ul className="list-disc space-y-1 pl-5 text-amber-700 dark:text-amber-400">
+                {notes.adjustments.map((item, i) => (
+                  <li key={`${item}-${i}`}>{item}</li>
+                ))}
+              </ul>
+            </Field>
+          )}
+
+          {notes.collidedWith && (
+            <p className="text-xs text-muted-foreground">
+              Initially collided with {notes.collidedWith} — adjusted to stay
+              distinct.
+            </p>
           )}
         </>
       )}

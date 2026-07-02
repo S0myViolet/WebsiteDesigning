@@ -2,6 +2,7 @@
 import type {
   AnalysisJson,
   BusinessListItem,
+  CreativeDirectionJson,
   DesignBriefJson,
   LayoutType,
   LeadStatusValue,
@@ -10,6 +11,7 @@ import type {
   ReviewKeyword,
   ScoreBreakdown,
   SearchRunSummary,
+  UniquenessNotes,
   VisualStyleJson,
   WebsiteCopyJson,
   WebsiteStatus,
@@ -66,6 +68,10 @@ export interface WebsiteDto {
   /** Quality-gate score (0-100) and full report */
   qualityScore: number | null;
   qualityReport: QualityReportJson | null;
+  /** The design concept invented for this business */
+  creativeDirection: CreativeDirectionJson | null;
+  /** Structural-uniqueness comparison against other generated sites */
+  uniquenessNotes: UniquenessNotes | null;
   updatedAt: string;
 }
 

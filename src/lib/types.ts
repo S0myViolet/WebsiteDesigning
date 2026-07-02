@@ -143,6 +143,7 @@ export type LayoutType =
   | "hospitality"
   | "wellness-clinic"
   | "creative-portfolio"
+  | "premium-professional"
   | "simple-landing";
 
 export const LAYOUT_TYPES: LayoutType[] = [
@@ -151,17 +152,59 @@ export const LAYOUT_TYPES: LayoutType[] = [
   "hospitality",
   "wellness-clinic",
   "creative-portfolio",
+  "premium-professional",
   "simple-landing",
 ];
 
 export const LAYOUT_TYPE_LABELS: Record<LayoutType, string> = {
-  "premium-service": "Premium service business",
-  "local-practical": "Local practical business",
-  hospitality: "Hospitality",
-  "wellness-clinic": "Wellness & clinic",
-  "creative-portfolio": "Creative portfolio",
-  "simple-landing": "Simple local landing page",
+  "premium-service": "Editorial luxury",
+  "local-practical": "Bold local service",
+  hospitality: "Warm hospitality",
+  "wellness-clinic": "Calm clinical",
+  "creative-portfolio": "Portfolio showcase",
+  "premium-professional": "Premium professional",
+  "simple-landing": "Compact conversion landing",
 };
+
+/**
+ * Creative direction: the design concept invented for one business before
+ * any copy or layout work (design-personality spec).
+ */
+export interface CreativeDirectionJson {
+  creative_concept: string;
+  visual_mood: string;
+  layout_personality: string;
+  signature_design_element: string;
+  business_specific_feature: string;
+  premium_detail: string;
+  interaction_idea: string;
+  why_this_fits_the_business: string;
+}
+
+/** Business-specific feature-section types every layout knows how to render. */
+export type FeatureSectionType =
+  | "checklist" // diagnostic/cleaning/service checklist
+  | "steps" // process / what-to-expect timeline
+  | "reassurance" // first visit / patient reassurance
+  | "perfect-for" // occasions/customers this place suits
+  | "highlights" // menu/treatment/practice highlights
+  | "service-area"; // areas served / location convenience
+
+export const FEATURE_SECTION_TYPES: FeatureSectionType[] = [
+  "checklist",
+  "steps",
+  "reassurance",
+  "perfect-for",
+  "highlights",
+  "service-area",
+];
+
+export interface FeatureSection {
+  type: FeatureSectionType;
+  title: string;
+  intro: string;
+  items: { title: string; description: string }[];
+}
 
 /** Where a claim used on the website comes from. */
 export type ClaimConfidence =
@@ -254,7 +297,7 @@ export interface QualityIssue {
   note: string;
 }
 
-/** Output of the pre-save quality gate. */
+/** Output of the pre-save quality + design audit gate. */
 export interface QualityReportJson {
   quality_score: number;
   feels_specific: boolean;
@@ -263,6 +306,21 @@ export interface QualityReportJson {
   unsupported_claims_found: string[];
   issues: QualityIssue[];
   improvement_instructions: string;
+  /** Design-audit additions (optional for reports from older drafts) */
+  hero_has_strong_idea?: boolean;
+  has_business_specific_features?: boolean;
+  design_notes?: string[];
+}
+
+/** Result of the uniqueness gate comparing this site to other generated sites. */
+export interface UniquenessNotes {
+  /** Structural signature: layout + hero variant + palette hue bucket */
+  signature: string;
+  /** Hero treatment variant applied (each layout has more than one) */
+  heroVariant: string;
+  collidedWith: string | null;
+  adjustments: string[];
+  notes: string;
 }
 
 /** Structured AI output for website copy generation (spec section 11). */
@@ -296,6 +354,12 @@ export interface WebsiteCopyJson {
   highlight_items?: { title: string; description: string }[];
   /** Optional FAQ entries (wellness/clinic and practical layouts). */
   faq?: { question: string; answer: string }[];
+  /**
+   * 2-3 business-specific feature sections (checklists, process steps,
+   * reassurance blocks, "perfect for", service areas) chosen to match the
+   * creative direction. Each layout renders these with its own treatment.
+   */
+  feature_sections?: FeatureSection[];
 }
 
 /** App settings; DB overrides are merged over env values and defaults. */

@@ -15,11 +15,14 @@ export interface QualityTier {
   toneClass: string;
 }
 
-/** Map a quality-gate score (0-100) to a sales-facing tier. */
+/** Map a quality-gate score (0-100) to a sales-facing tier (bar is 85). */
 export function qualityTier(score: number): QualityTier {
-  if (score >= 90) return { label: "Excellent", toneClass: QUALITY_TONES.emerald };
-  if (score >= 80) return { label: "Client-ready", toneClass: QUALITY_TONES.blue };
-  if (score >= 60) return { label: "Needs polish", toneClass: QUALITY_TONES.amber };
+  if (score >= 92)
+    return { label: "Impressive", toneClass: QUALITY_TONES.emerald };
+  if (score >= 85)
+    return { label: "Client-ready", toneClass: QUALITY_TONES.blue };
+  if (score >= 70)
+    return { label: "Needs polish", toneClass: QUALITY_TONES.amber };
   return { label: "Below bar", toneClass: QUALITY_TONES.red };
 }
 

@@ -21,6 +21,7 @@ import {
   parseJsonField,
   type AnalysisJson,
   type BusinessListItem,
+  type CreativeDirectionJson,
   type DesignBriefJson,
   type LayoutType,
   type LeadStatusValue,
@@ -28,6 +29,7 @@ import {
   type ResearchResult,
   type ReviewKeyword,
   type ScoreBreakdown,
+  type UniquenessNotes,
   type VisualStyleJson,
   type WebsiteStatus,
 } from "@/lib/types";
@@ -137,6 +139,11 @@ export function toWebsiteDto(w: GeneratedWebsite): WebsiteDto {
     visualStyle: parseJsonField<VisualStyleJson | null>(w.visualStyle, null),
     qualityScore: w.qualityScore,
     qualityReport: parseJsonField<QualityReportJson | null>(w.qualityReport, null),
+    creativeDirection: parseJsonField<CreativeDirectionJson | null>(
+      w.creativeDirection,
+      null
+    ),
+    uniquenessNotes: parseJsonField<UniquenessNotes | null>(w.uniquenessNotes, null),
     updatedAt: w.updatedAt.toISOString(),
   };
 }
