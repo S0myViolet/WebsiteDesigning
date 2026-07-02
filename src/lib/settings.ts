@@ -28,7 +28,7 @@ export async function getSettings(): Promise<AppSettings> {
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined || value === null) continue;
     if (typeof value === "string" && value.trim() === "") continue;
-    (merged as Record<string, unknown>)[key] = value;
+    (merged as unknown as Record<string, unknown>)[key] = value;
   }
   return merged;
 }

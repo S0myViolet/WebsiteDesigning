@@ -2,6 +2,9 @@
 // explored without Google/OpenAI API keys. All names, reviews, and details are
 // invented for demo purposes and do not refer to real businesses.
 import { PrismaClient } from "@prisma/client";
+import { extractReviewKeywords } from "../src/lib/keywords";
+import { computeOpportunityScore } from "../src/lib/scoring";
+import type { WebsiteStatus } from "../src/lib/types";
 
 const prisma = new PrismaClient();
 
@@ -95,14 +98,34 @@ const samples = [
 async function main() {
   for (const s of samples) {
     const { reviews, ...business } = s;
+    const reviewTexts = reviews.map((r) => r.text);
+    const keywords = extractReviewKeywords(reviewTexts);
+    const score = computeOpportunityScore({
+      reviewCount: business.reviewCount,
+      rating: business.rating,
+      websiteStatus: business.websiteStatus as WebsiteStatus,
+      category: business.category,
+      reviewTexts,
+      editorialSummary: business.editorialSummary,
+      hasPhone: Boolean(business.phone),
+      hasHours: Boolean(business.openingHours),
+      photosCount: 4,
+    });
     const created = await prisma.business.upsert({
       where: { placeId: business.placeId },
       create: {
         ...business,
-        photosCount: 0,
+        photosCount: 4,
+        keywordsJson: JSON.stringify(keywords),
+        opportunityScore: score.total,
+        scoreBreakdown: JSON.stringify(score),
         rawPlaceData: JSON.stringify({ source: "seed", note: "Fictional sample data" }),
       },
-      update: {},
+      update: {
+        keywordsJson: JSON.stringify(keywords),
+        opportunityScore: score.total,
+        scoreBreakdown: JSON.stringify(score),
+      },
     });
     const existing = await prisma.review.count({ where: { businessId: created.id } });
     if (existing === 0) {
