@@ -101,6 +101,16 @@ function normalizeForComparison(text: string): string {
   return text.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+/** Palette entries are colors, not prose: validate as hex, never sanitize. */
+function safePaletteHex(value: string | undefined, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const raw = value.trim().replace(/^#/, "");
+  if (/^[0-9a-fA-F]{3}$/.test(raw) || /^[0-9a-fA-F]{6}$/.test(raw)) {
+    return `#${raw.toLowerCase()}`;
+  }
+  return fallback;
+}
+
 /**
  * Sanitizes every string (including nested arrays/objects) and hard-enforces
  * the output constraints: seo lengths, non-verbatim testimonials, fallbacks.
@@ -169,12 +179,10 @@ function finalizeCopy(
       d.toLowerCase().replace(/\s+/g, "")
     ),
     color_palette: {
-      primary: sanitizeCopy(data.color_palette.primary).trim() || DEFAULT_PALETTE.primary,
-      secondary:
-        sanitizeCopy(data.color_palette.secondary).trim() || DEFAULT_PALETTE.secondary,
-      accent: sanitizeCopy(data.color_palette.accent).trim() || DEFAULT_PALETTE.accent,
-      background:
-        sanitizeCopy(data.color_palette.background).trim() || DEFAULT_PALETTE.background,
+      primary: safePaletteHex(data.color_palette.primary, DEFAULT_PALETTE.primary),
+      secondary: safePaletteHex(data.color_palette.secondary, DEFAULT_PALETTE.secondary),
+      accent: safePaletteHex(data.color_palette.accent, DEFAULT_PALETTE.accent),
+      background: safePaletteHex(data.color_palette.background, DEFAULT_PALETTE.background),
     },
     font_recommendation: sanitizeCopy(data.font_recommendation).trim(),
     image_recommendations: clean(data.image_recommendations),

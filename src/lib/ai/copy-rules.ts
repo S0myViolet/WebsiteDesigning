@@ -68,7 +68,10 @@ function escapeRegExp(value: string): string {
 export function sanitizeCopy(text: string): string {
   let result = text;
   for (const phrase of BANNED_PHRASES) {
-    const pattern = new RegExp(escapeRegExp(phrase), "gi");
+    // "#1" must not match inside hex color codes like "#1d4ed8" — only treat
+    // it as a superlative when not followed by another hex digit.
+    const suffix = phrase === "#1" ? "(?![0-9a-fA-F])" : "";
+    const pattern = new RegExp(escapeRegExp(phrase) + suffix, "gi");
     result = result.replace(pattern, replacementFor(phrase));
   }
   return result;

@@ -1,12 +1,31 @@
 // Thin wrapper around the OpenAI SDK for JSON-mode chat completions.
 import OpenAI from "openai";
+import { fetch as undiciFetch, ProxyAgent } from "undici";
+
+/**
+ * When HTTPS_PROXY is set (corporate proxies, sandboxed environments),
+ * Next.js's bundled fetch ignores it — route OpenAI calls through the proxy
+ * explicitly. Without a proxy this returns undefined and the SDK uses its
+ * default fetch.
+ */
+function proxyAwareFetch(): typeof fetch | undefined {
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+  if (!proxy) return undefined;
+  const dispatcher = new ProxyAgent(proxy);
+  const wrapped = (url: Parameters<typeof undiciFetch>[0], init?: RequestInit) =>
+    undiciFetch(url, {
+      ...(init as Parameters<typeof undiciFetch>[1]),
+      dispatcher,
+    });
+  return wrapped as unknown as typeof fetch;
+}
 
 /**
  * Construct an OpenAI client for a single call. The key comes from resolved
  * app settings (env or DB), so no module-level client/key is kept.
  */
 export function getOpenAI(apiKey: string): OpenAI {
-  return new OpenAI({ apiKey });
+  return new OpenAI({ apiKey, fetch: proxyAwareFetch() });
 }
 
 export interface ChatJsonOptions {
