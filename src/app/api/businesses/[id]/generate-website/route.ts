@@ -231,17 +231,25 @@ export async function POST(
     for (
       let attempt = 0;
       attempt < 2 &&
-      report.quality_score < QUALITY_THRESHOLD &&
+      (report.quality_score < QUALITY_THRESHOLD ||
+        report.hero_has_strong_idea === false) &&
       report.improvement_instructions;
       attempt++
     ) {
+      // When the audit flags the hero as weak, force an explicit headline
+      // rewrite in the critique — the deterministic detector cannot see the
+      // reviewer's judgement, but the copywriter's rescue pass can act on it.
+      const critique =
+        report.hero_has_strong_idea === false
+          ? `${report.improvement_instructions}\nThe HEADLINE is too generic — it must name the single most-praised concrete service, dish, or job from the reviews (not "Professional ... Services" or "Quality ..."). A regular customer should recognize the specialty in the headline.`
+          : report.improvement_instructions;
       const improved = await generateWebsiteCopy(input, analysisJson, {
         ...ai,
         websiteStyle: settings.defaultWebsiteStyle,
         brief,
         direction,
         layout,
-        critique: report.improvement_instructions,
+        critique,
       });
       const improvedReport = await reviewWebsiteQuality(
         input,
@@ -250,7 +258,15 @@ export async function POST(
         layout,
         ai
       );
-      if (improvedReport.quality_score >= report.quality_score) {
+      // Accept when the rewrite scores at least as high, OR when it fixes a
+      // weak hero without a meaningful score regression.
+      const fixesHero =
+        report.hero_has_strong_idea === false &&
+        improvedReport.hero_has_strong_idea === true;
+      if (
+        improvedReport.quality_score >= report.quality_score ||
+        (fixesHero && improvedReport.quality_score >= report.quality_score - 3)
+      ) {
         copy = improved;
         report = improvedReport;
       } else {

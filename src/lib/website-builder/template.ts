@@ -2052,6 +2052,7 @@ import {
   HoursList,
   MapEmbed,
   PullQuotes,
+  SectionHead,
 } from "@/components/Shared";
 import { SITE } from "@/config/site";
 
@@ -2097,13 +2098,13 @@ export function CreativePortfolioPage() {
       <main>
         <section id="work" aria-labelledby="work-heading" className="px-5 pb-section">
           <div className="mx-auto max-w-6xl">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
-              What we make
-            </p>
-            <h2 id="work-heading" className="mt-2 text-3xl font-bold">
-              Selected work and specialties
-            </h2>
-            <div className="mt-8">
+            <SectionHead
+              index={1}
+              kicker="What we make"
+              title="Selected work and specialties"
+              headingId="work-heading"
+            />
+            <div>
               {projects.map((project, index) => (
                 <div
                   key={project.title}
@@ -2206,6 +2207,7 @@ import {
   HoursList,
   MapEmbed,
   PullQuotes,
+  SectionHead,
 } from "@/components/Shared";
 import { SITE } from "@/config/site";
 
@@ -2225,9 +2227,15 @@ export function PremiumProfessionalPage() {
           <a
             href={links.whatsappUrl ?? links.telUrl ?? "#contact"}
             aria-label={links.whatsappUrl ? "Contact us on WhatsApp" : "Contact us"}
-            className="rounded-btn bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+            className="group inline-flex items-center gap-2 rounded-btn bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
           >
             {copy.ctaText}
+            <span
+              aria-hidden="true"
+              className="inline-block transition-transform duration-200 group-hover:translate-x-1"
+            >
+              {"\\u2192"}
+            </span>
           </a>
         </div>
       </nav>
@@ -2290,11 +2298,13 @@ export function PremiumProfessionalPage() {
       <main>
         <section id="practice" aria-labelledby="practice-heading" className="px-5 py-section">
           <div className="mx-auto max-w-6xl">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Practice</p>
-            <h2 id="practice-heading" className="mt-2 text-3xl font-bold">
-              Areas of work
-            </h2>
-            <div className="mt-7 divide-y divide-text/10 border-y border-text/10">
+            <SectionHead
+              index={1}
+              kicker="Practice"
+              title="Areas of work"
+              headingId="practice-heading"
+            />
+            <div className="divide-y divide-text/10 border-y border-text/10">
               {areas.map((area, index) => (
                 <div key={area.title} className="grid grid-cols-[56px_1fr] gap-5 py-6">
                   <span
@@ -2402,9 +2412,15 @@ export function SimpleLandingPage() {
             <a
               href={links.whatsappUrl}
               aria-label="Message us on WhatsApp"
-              className="block rounded-btn bg-[#16a34a] px-6 py-4 text-center text-lg font-bold text-white transition hover:opacity-90"
+              className="group flex items-center justify-center gap-2.5 rounded-btn bg-[#16a34a] px-6 py-4 text-center text-lg font-bold text-white transition hover:opacity-90"
             >
               {copy.ctaText}
+              <span
+                aria-hidden="true"
+                className="inline-block transition-transform duration-200 group-hover:translate-x-1"
+              >
+                {"\\u2192"}
+              </span>
             </a>
           ) : null}
           {links.mapsUrl ? (
@@ -2546,8 +2562,9 @@ const LAYOUT_MODULES: Record<LayoutType, LayoutModule> = {
 };
 
 /**
- * page.tsx: draft banner + the selected layout page + shared footer + the
- * mobile sticky contact bar (renders null when no phone links exist).
+ * page.tsx: static concept-draft ribbon + the selected layout page + shared
+ * footer (with the full disclaimer bar) + the mobile sticky contact bar
+ * (renders null when no phone links exist).
  */
 function buildPageTsx(mod: LayoutModule): string {
   return `import { DraftBanner } from "@/components/DraftBanner";

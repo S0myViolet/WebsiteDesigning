@@ -342,9 +342,53 @@ function finalizeCopy(
   };
 }
 
-/** Headline patterns that could describe a thousand businesses. */
+/**
+ * Headline patterns that could describe a thousand businesses. Catches the
+ * "Professional/Quality/Expert <words> Services/Treatments/Care/Solutions"
+ * frame that models default to when the source reviews are bland.
+ */
 const WEAK_HEADLINE_PATTERN =
-  /high-?quality|top-?quality|professional\s+\w+(\s+\w+)?\s+services|premium\s+services|quality\s+(services|care)|welcome\s+to|your\s+destination|excellence/i;
+  /high-?quality|top-?quality|\b(professional|quality|expert|premium|renowned|leading|trusted|premier|exceptional|exquisite|superior)\b[^.]*\b(services|treatments|care|solutions|experience)\b|welcome\s+to|your\s+destination|excellence/i;
+
+/** Title-case a synthesized headline, leaving small joining words lowercase. */
+function titleCase(text: string): string {
+  const small = new Set(["in", "and", "of", "the", "on", "for", "to", "at"]);
+  return text
+    .split(" ")
+    .map((word, i) =>
+      i > 0 && small.has(word.toLowerCase())
+        ? word.toLowerCase()
+        : word.replace(/^\w/, (c) => c.toUpperCase())
+    )
+    .join(" ");
+}
+
+/**
+ * Deterministic last-resort headline built from the two strongest concrete
+ * anchors + the Dubai area, e.g. "Hair Treatments & Massages in Dubai Marina".
+ * Used only when the model will not stop producing generic frames.
+ */
+function synthesizeHeadline(
+  anchors: string[],
+  input: BusinessAnalysisInput
+): string | null {
+  const clean = anchors
+    .map((a) => a.replace(/\bservices?\b/gi, "").replace(/\s+/g, " ").trim())
+    .filter((a) => a.length >= 3 && !/^(professional|quality|premium|expert)$/i.test(a));
+  const seen = new Set<string>();
+  const picked: string[] = [];
+  for (const a of clean) {
+    const key = a.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picked.push(a);
+    if (picked.length === 2) break;
+  }
+  if (picked.length === 0) return null;
+  const area = input.area ?? "Dubai";
+  const subject = picked.length === 2 ? `${picked[0]} & ${picked[1]}` : picked[0];
+  return titleCase(`${subject} in ${area}`);
+}
 
 /** Concrete nouns the headline could anchor on, ranked by evidence strength. */
 function concreteAnchors(
@@ -399,7 +443,13 @@ Current subheadline: ${copy.subheadline}`,
       };
     }
   } catch {
-    // Keep the original copy when the rescue call fails — never block the run.
+    // Fall through to deterministic synthesis when the rescue call fails.
+  }
+  // The model would not drop the generic frame — build a concrete headline
+  // from the anchors so the hero never ships as "Professional ... Services".
+  const synthesized = synthesizeHeadline(anchors, input);
+  if (synthesized && !WEAK_HEADLINE_PATTERN.test(synthesized)) {
+    return { ...copy, headline: synthesized };
   }
   return copy;
 }
