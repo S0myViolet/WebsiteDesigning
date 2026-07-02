@@ -2,19 +2,137 @@
 // as a Record<filePath, fileContent>. The result is stored JSON-encoded in
 // GeneratedWebsite.generatedCode and zipped for download via zip.ts.
 //
+// The export mirrors the six in-dashboard preview variants (layouts.ts): the
+// layout type picks a structurally different page component, and the visual
+// style (6-color palette, typography direction, button shape, section
+// spacing) is derived into typed style tokens that are wired into the
+// exported Tailwind theme and globals.css.
+//
 // Safety model: every generated source file is a fixed string with NO user
 // text interpolated into JSX/TSX literals. All business data and AI copy is
 // injected exclusively through the typed SITE object in src/config/site.ts,
 // serialized with JSON.stringify, so the components are fully data-driven and
-// immune to injection through business names, reviews, or AI output.
+// immune to injection through business names, reviews, or AI output. The
+// Google rating / review count is intentionally never included in the export
+// (Maps content policy).
 
+import type { LayoutType, VisualStyleJson } from "@/lib/types";
+import { LAYOUT_TYPE_LABELS } from "@/lib/types";
 import type { PreviewInput } from "./preview-html";
+import { selectLayout } from "./layout-select";
 import { normalizePhone, whatsappLink } from "@/lib/utils";
 
 const DISCLAIMER =
   "DRAFT WEBSITE CONCEPT — generated from public Google Maps data; not the official website of this business";
 
-/** Normalize an AI-provided color to #RRGGBB, with a fallback. */
+// ---------------------------------------------------------------------------
+// Style tokens derived from the per-business VisualStyleJson
+// ---------------------------------------------------------------------------
+
+type HeadingFont = "serif" | "sans";
+type ButtonRadius = "999px" | "4px" | "10px";
+type SectionSpacing = "compact" | "comfortable" | "generous";
+
+interface StyleColors {
+  primary: string;
+  secondary: string;
+  accent: string;
+  background: string;
+  surface: string;
+  text: string;
+}
+
+interface StyleTokens {
+  colors: StyleColors;
+  headingFont: HeadingFont;
+  buttonRadius: ButtonRadius;
+  sectionSpacing: SectionSpacing;
+}
+
+/** Per-layout color fallbacks — kept in sync with layouts.ts. */
+const LAYOUT_COLOR_FALLBACKS: Record<LayoutType, StyleColors> = {
+  "premium-service": {
+    primary: "#8a6d4b",
+    secondary: "#2b2320",
+    accent: "#c9a36a",
+    background: "#faf7f2",
+    surface: "#ffffff",
+    text: "#28211c",
+  },
+  "local-practical": {
+    primary: "#b45309",
+    secondary: "#1f2937",
+    accent: "#f59e0b",
+    background: "#f8fafc",
+    surface: "#ffffff",
+    text: "#111827",
+  },
+  hospitality: {
+    primary: "#9a3412",
+    secondary: "#3f2212",
+    accent: "#d97706",
+    background: "#fdf8f0",
+    surface: "#ffffff",
+    text: "#2a1c10",
+  },
+  "wellness-clinic": {
+    primary: "#0e7490",
+    secondary: "#164e63",
+    accent: "#14b8a6",
+    background: "#f7fafb",
+    surface: "#ffffff",
+    text: "#0f2530",
+  },
+  "creative-portfolio": {
+    primary: "#111111",
+    secondary: "#4b4b4b",
+    accent: "#e11d48",
+    background: "#fafafa",
+    surface: "#ffffff",
+    text: "#111111",
+  },
+  "simple-landing": {
+    primary: "#1d4ed8",
+    secondary: "#1e3a5f",
+    accent: "#f59e0b",
+    background: "#f8fafc",
+    surface: "#ffffff",
+    text: "#111827",
+  },
+};
+
+const SECTION_SPACING_REM: Record<SectionSpacing, string> = {
+  compact: "3.25rem",
+  comfortable: "4.5rem",
+  generous: "6rem",
+};
+
+const SANS_FONTS = [
+  "ui-sans-serif",
+  "system-ui",
+  "-apple-system",
+  "Segoe UI",
+  "Roboto",
+  "Helvetica Neue",
+  "Arial",
+  "sans-serif",
+];
+
+const SERIF_FONTS = [
+  "ui-serif",
+  "Georgia",
+  "Cambria",
+  "Times New Roman",
+  "Times",
+  "serif",
+];
+
+/** CSS font-family value (quotes names that contain whitespace). */
+function cssFontStack(fonts: string[]): string {
+  return fonts.map((f) => (/\s/.test(f) ? `"${f}"` : f)).join(", ");
+}
+
+/** Normalize an AI-provided color to #rrggbb, with a fallback. */
 function safeHex(value: string | null | undefined, fallback: string): string {
   if (typeof value !== "string") return fallback;
   const raw = value.trim().replace(/^#/, "");
@@ -29,6 +147,55 @@ function safeHex(value: string | null | undefined, fallback: string): string {
   }
   return fallback;
 }
+
+function deriveStyleTokens(
+  style: VisualStyleJson | null | undefined,
+  layout: LayoutType
+): StyleTokens {
+  const fb = LAYOUT_COLOR_FALLBACKS[layout];
+  const palette = style?.color_palette;
+
+  const headingFont: HeadingFont = style
+    ? /serif/i.test(style.typography.heading_style) &&
+      !/sans/i.test(style.typography.heading_style)
+      ? "serif"
+      : "sans"
+    : layout === "premium-service" || layout === "hospitality"
+      ? "serif"
+      : "sans";
+
+  const buttonStyle = style?.button_style ?? "";
+  const buttonRadius: ButtonRadius = /pill/i.test(buttonStyle)
+    ? "999px"
+    : /sharp|square/i.test(buttonStyle)
+      ? "4px"
+      : "10px";
+
+  const spacing = style?.section_spacing ?? "";
+  const sectionSpacing: SectionSpacing = /generous/i.test(spacing)
+    ? "generous"
+    : /compact/i.test(spacing)
+      ? "compact"
+      : "comfortable";
+
+  return {
+    colors: {
+      primary: safeHex(palette?.primary, fb.primary),
+      secondary: safeHex(palette?.secondary, fb.secondary),
+      accent: safeHex(palette?.accent, fb.accent),
+      background: safeHex(palette?.background, fb.background),
+      surface: safeHex(palette?.surface, fb.surface),
+      text: safeHex(palette?.text, fb.text),
+    },
+    headingFont,
+    buttonRadius,
+    sectionSpacing,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
 
 /** npm-safe package name from a business name. */
 function slugify(value: string): string {
@@ -54,15 +221,30 @@ function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+/** Single-line, markdown-safe text for README interpolation. */
+function safeReadmeText(value: string): string {
+  return value.replace(/[`\r\n]+/g, " ").trim();
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
 export function buildNextJsProject(input: PreviewInput): Record<string, string> {
   const { business, copy } = input;
 
-  const colors = {
-    primary: safeHex(copy.color_palette?.primary, "#0f766e"),
-    secondary: safeHex(copy.color_palette?.secondary, "#134e4a"),
-    accent: safeHex(copy.color_palette?.accent, "#f59e0b"),
-    background: safeHex(copy.color_palette?.background, "#fafaf9"),
-  };
+  const layout: LayoutType =
+    input.layout ??
+    selectLayout({
+      category: business.category,
+      briefRecommendation: input.brief?.recommended_layout_type ?? null,
+      storedReviewCount: 1, // legacy callers have no stored-review info
+      hasPhone: Boolean(business.phone),
+      hasHours: business.openingHours.length > 0,
+      hasEditorialSummary: true,
+    });
+
+  const tokens = deriveStyleTokens(input.style ?? null, layout);
 
   const phone = business.phone ? normalizePhone(business.phone) : "";
   const telUrl = phone ? `tel:${phone}` : null;
@@ -73,7 +255,14 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
     [business.name, business.address].filter(Boolean).join(" ")
   );
 
-  const site = {
+  const trustSignals = asArray(
+    input.brief?.trust_signals?.length
+      ? input.brief.trust_signals
+      : copy.why_choose_us
+  ).slice(0, 6);
+
+  const site: SiteConfigData = {
+    layout,
     business: {
       name: business.name,
       category: business.category,
@@ -82,8 +271,7 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
       phone: business.phone,
       googleMapsUrl: safeHttpUrl(business.googleMapsUrl),
       openingHours: asArray(business.openingHours),
-      rating: business.rating,
-      reviewCount: business.reviewCount,
+      // NOTE: Google rating/reviewCount deliberately excluded (Maps policy).
     },
     copy: {
       websiteName: copy.website_name || business.name,
@@ -92,17 +280,24 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
       ctaText: copy.cta_text || "Contact us",
       about: copy.about_section ?? "",
       services: asArray(copy.services),
+      highlightItems: asArray(copy.highlight_items),
+      faq: asArray(copy.faq),
       whyChooseUs: asArray(copy.why_choose_us),
+      trustSignals,
       testimonials: asArray(copy.testimonials),
       contactSection: copy.contact_section ?? "",
       seoTitle: copy.seo_title || business.name,
       seoMetaDescription: copy.seo_meta_description ?? "",
-      fontRecommendation: copy.font_recommendation ?? "",
-      imageRecommendations: asArray(copy.image_recommendations),
       whatsappMessage: copy.whatsapp_message ?? "",
       bookingFormFields: asArray(copy.booking_form_fields),
+      imageRecommendations: asArray(copy.image_recommendations),
     },
-    colors,
+    style: {
+      colors: tokens.colors,
+      headingFont: tokens.headingFont,
+      buttonRadius: tokens.buttonRadius,
+      sectionSpacing: tokens.sectionSpacing,
+    },
     links: {
       whatsappUrl,
       telUrl,
@@ -112,26 +307,23 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
     disclaimer: DISCLAIMER,
   };
 
+  const layoutModule = LAYOUT_MODULES[layout];
+
   return {
     "package.json": buildPackageJson(business.name),
     "next.config.mjs": NEXT_CONFIG,
     "tsconfig.json": TSCONFIG,
     "postcss.config.js": POSTCSS_CONFIG,
-    "tailwind.config.ts": buildTailwindConfig(colors),
-    "README.md": buildReadme(business.name),
-    "src/app/globals.css": GLOBALS_CSS,
+    "tailwind.config.ts": buildTailwindConfig(tokens),
+    "README.md": buildReadme(business.name, layout, tokens, input.style ?? null),
+    "src/app/globals.css": buildGlobalsCss(tokens),
     "src/app/layout.tsx": LAYOUT_TSX,
-    "src/app/page.tsx": PAGE_TSX,
+    "src/app/page.tsx": buildPageTsx(layoutModule),
     "src/config/site.ts": buildSiteConfig(site),
     "src/components/DraftBanner.tsx": DRAFT_BANNER_TSX,
-    "src/components/Hero.tsx": HERO_TSX,
-    "src/components/About.tsx": ABOUT_TSX,
-    "src/components/Services.tsx": SERVICES_TSX,
-    "src/components/WhyUs.tsx": WHY_US_TSX,
-    "src/components/Testimonials.tsx": TESTIMONIALS_TSX,
-    "src/components/Hours.tsx": HOURS_TSX,
-    "src/components/LocationMap.tsx": LOCATION_MAP_TSX,
-    "src/components/ContactCta.tsx": CONTACT_CTA_TSX,
+    "src/components/SiteFooter.tsx": SITE_FOOTER_TSX,
+    "src/components/Shared.tsx": SHARED_TSX,
+    [layoutModule.file]: layoutModule.source,
   };
 }
 
@@ -169,12 +361,8 @@ function buildPackageJson(businessName: string): string {
   return `${JSON.stringify(pkg, null, 2)}\n`;
 }
 
-function buildTailwindConfig(colors: {
-  primary: string;
-  secondary: string;
-  accent: string;
-  background: string;
-}): string {
+function buildTailwindConfig(tokens: StyleTokens): string {
+  const headingFonts = tokens.headingFont === "serif" ? SERIF_FONTS : SANS_FONTS;
   return `import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -182,10 +370,22 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary: ${JSON.stringify(colors.primary)},
-        secondary: ${JSON.stringify(colors.secondary)},
-        accent: ${JSON.stringify(colors.accent)},
-        background: ${JSON.stringify(colors.background)},
+        primary: ${JSON.stringify(tokens.colors.primary)},
+        secondary: ${JSON.stringify(tokens.colors.secondary)},
+        accent: ${JSON.stringify(tokens.colors.accent)},
+        background: ${JSON.stringify(tokens.colors.background)},
+        surface: ${JSON.stringify(tokens.colors.surface)},
+        text: ${JSON.stringify(tokens.colors.text)},
+      },
+      fontFamily: {
+        heading: ${JSON.stringify(headingFonts)},
+        body: ${JSON.stringify(SANS_FONTS)},
+      },
+      borderRadius: {
+        btn: ${JSON.stringify(tokens.buttonRadius)},
+      },
+      spacing: {
+        section: ${JSON.stringify(SECTION_SPACING_REM[tokens.sectionSpacing])},
       },
     },
   },
@@ -196,7 +396,34 @@ export default config;
 `;
 }
 
+function buildGlobalsCss(tokens: StyleTokens): string {
+  const headingStack = cssFontStack(
+    tokens.headingFont === "serif" ? SERIF_FONTS : SANS_FONTS
+  );
+  const bodyStack = cssFontStack(SANS_FONTS);
+  return `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: ${bodyStack};
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: ${headingStack};
+}
+`;
+}
+
 interface SiteConfigData {
+  layout: LayoutType;
   business: {
     name: string;
     category: string;
@@ -205,8 +432,6 @@ interface SiteConfigData {
     phone: string | null;
     googleMapsUrl: string | null;
     openingHours: string[];
-    rating: number | null;
-    reviewCount: number;
   };
   copy: {
     websiteName: string;
@@ -215,17 +440,24 @@ interface SiteConfigData {
     ctaText: string;
     about: string;
     services: { title: string; description: string }[];
+    highlightItems: { title: string; description: string }[];
+    faq: { question: string; answer: string }[];
     whyChooseUs: string[];
+    trustSignals: string[];
     testimonials: string[];
     contactSection: string;
     seoTitle: string;
     seoMetaDescription: string;
-    fontRecommendation: string;
-    imageRecommendations: string[];
     whatsappMessage: string;
     bookingFormFields: string[];
+    imageRecommendations: string[];
   };
-  colors: { primary: string; secondary: string; accent: string; background: string };
+  style: {
+    colors: StyleColors;
+    headingFont: HeadingFont;
+    buttonRadius: ButtonRadius;
+    sectionSpacing: SectionSpacing;
+  };
   links: {
     whatsappUrl: string | null;
     telUrl: string | null;
@@ -239,13 +471,29 @@ function buildSiteConfig(site: SiteConfigData): string {
   return `// Auto-generated site configuration.
 // ALL page content is driven by this object — edit values here to update the
 // site. Generated from the business's public Google Maps profile data.
+// The Google star rating / review count is intentionally NOT included.
+
+export type SiteLayout =
+  | "premium-service"
+  | "local-practical"
+  | "hospitality"
+  | "wellness-clinic"
+  | "creative-portfolio"
+  | "simple-landing";
 
 export interface SiteService {
   title: string;
   description: string;
 }
 
+export interface SiteFaqItem {
+  question: string;
+  answer: string;
+}
+
 export interface SiteConfig {
+  /** Layout variant this export was generated for. */
+  layout: SiteLayout;
   business: {
     name: string;
     category: string;
@@ -254,8 +502,6 @@ export interface SiteConfig {
     phone: string | null;
     googleMapsUrl: string | null;
     openingHours: string[];
-    rating: number | null;
-    reviewCount: number;
   };
   copy: {
     websiteName: string;
@@ -264,21 +510,33 @@ export interface SiteConfig {
     ctaText: string;
     about: string;
     services: SiteService[];
+    /** Menu highlights / signature services / treatments / projects. */
+    highlightItems: SiteService[];
+    faq: SiteFaqItem[];
     whyChooseUs: string[];
+    trustSignals: string[];
     testimonials: string[];
     contactSection: string;
     seoTitle: string;
     seoMetaDescription: string;
-    fontRecommendation: string;
-    imageRecommendations: string[];
     whatsappMessage: string;
     bookingFormFields: string[];
+    /** Photo ideas for replacing the gradient placeholder panels. */
+    imageRecommendations: string[];
   };
-  colors: {
-    primary: string;
-    secondary: string;
-    accent: string;
-    background: string;
+  /** Style tokens derived from the AI visual style (wired into Tailwind). */
+  style: {
+    colors: {
+      primary: string;
+      secondary: string;
+      accent: string;
+      background: string;
+      surface: string;
+      text: string;
+    };
+    headingFont: "serif" | "sans";
+    buttonRadius: "999px" | "4px" | "10px";
+    sectionSpacing: "compact" | "comfortable" | "generous";
   };
   links: {
     whatsappUrl: string | null;
@@ -293,8 +551,16 @@ export const SITE: SiteConfig = ${JSON.stringify(site, null, 2)};
 `;
 }
 
-function buildReadme(businessName: string): string {
-  const safeName = businessName.replace(/[\r\n]+/g, " ").trim();
+function buildReadme(
+  businessName: string,
+  layout: LayoutType,
+  tokens: StyleTokens,
+  style: VisualStyleJson | null
+): string {
+  const safeName = safeReadmeText(businessName);
+  const layoutLabel = LAYOUT_TYPE_LABELS[layout];
+  const styleName = style ? safeReadmeText(style.style_name) : "";
+  const c = tokens.colors;
   return `# Draft website concept — ${safeName}
 
 > **DRAFT — NOT FOR PUBLICATION**
@@ -321,27 +587,48 @@ npm run build
 npm run start
 \`\`\`
 
+## Layout & style
+
+| Token | Value |
+| --- | --- |
+| Layout variant | \`${layout}\` (${layoutLabel}) |${styleName ? `\n| Style name | ${styleName} |` : ""}
+| Colors | primary \`${c.primary}\` · secondary \`${c.secondary}\` · accent \`${c.accent}\` · background \`${c.background}\` · surface \`${c.surface}\` · text \`${c.text}\` |
+| Heading font | ${tokens.headingFont} (system font stack, no downloads) |
+| Button radius | \`${tokens.buttonRadius}\` |
+| Section spacing | ${tokens.sectionSpacing} |
+
+The colors, fonts, button radius (\`rounded-btn\`) and section padding
+(\`py-section\`) are wired into \`tailwind.config.ts\` and \`src/app/globals.css\`.
+
 ## Editing content
 
-All text, colors, and contact links live in a single typed config object:
-\`src/config/site.ts\`. The components in \`src/components/\` are fully
+All text, contact links, and style tokens live in a single typed config
+object: \`src/config/site.ts\`. The components in \`src/components/\` are fully
 data-driven from that file, so most changes only require editing \`SITE\`.
 
-Theme colors (primary / secondary / accent / background) are wired into
-Tailwind in \`tailwind.config.ts\`.
+## Replacing the placeholder panels
+
+The page uses **gradient placeholder panels** instead of photos (no stock
+images are bundled). Replace them with real photos of the business — see
+\`SITE.copy.imageRecommendations\` in \`src/config/site.ts\` for suggested
+shots. Put images in \`public/\` and swap the gradient \`<div>\`s for
+\`next/image\` components.
 
 ## Notes
 
-- The booking form is a **non-functional demo** (submit is disabled).
+- The booking/quote form is a **non-functional demo** (submit is disabled).
 - The map is embedded via a keyless Google Maps embed URL.
-- Fonts use a system font stack (no external font downloads).
+- Fonts use system font stacks only (no external font downloads or CDNs).
+- Testimonials are paraphrased from public reviews and shown without
+  reviewer names; the Google star rating / review count is intentionally
+  not displayed.
 - A fixed draft-disclaimer banner is rendered on every page; remove
   \`DraftBanner\` only after the business owner approves the site.
 `;
 }
 
 // ---------------------------------------------------------------------------
-// Static files (no interpolated user data)
+// Static project files (no interpolated user data)
 // ---------------------------------------------------------------------------
 
 const NEXT_CONFIG = `/** @type {import('next').NextConfig} */
@@ -385,16 +672,6 @@ const POSTCSS_CONFIG = `module.exports = {
 };
 `;
 
-const GLOBALS_CSS = `@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-}
-`;
-
 const LAYOUT_TSX = `/*
  * DRAFT WEBSITE CONCEPT — generated from public Google Maps profile data as a
  * demo for the business owner. Not the official website of this business.
@@ -414,49 +691,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-background text-slate-900 antialiased">{children}</body>
+      {/* pt-8 leaves room for the fixed DraftBanner */}
+      <body className="bg-background pt-8 font-body text-text antialiased">
+        {children}
+      </body>
     </html>
-  );
-}
-`;
-
-const PAGE_TSX = `import { About } from "@/components/About";
-import { ContactCta } from "@/components/ContactCta";
-import { DraftBanner } from "@/components/DraftBanner";
-import { Hero } from "@/components/Hero";
-import { Hours } from "@/components/Hours";
-import { LocationMap } from "@/components/LocationMap";
-import { Services } from "@/components/Services";
-import { Testimonials } from "@/components/Testimonials";
-import { WhyUs } from "@/components/WhyUs";
-import { SITE } from "@/config/site";
-
-export default function HomePage() {
-  return (
-    <>
-      <DraftBanner />
-      <Hero />
-      <main>
-        <About />
-        <Services />
-        <WhyUs />
-        <Testimonials />
-        <Hours />
-        <LocationMap />
-        <ContactCta />
-      </main>
-      <footer className="border-t border-slate-200 bg-white px-4 py-10">
-        <div className="mx-auto max-w-6xl text-center">
-          <p className="text-base font-semibold">
-            {SITE.business.name}
-            {SITE.business.area ? " \\u00B7 " + SITE.business.area : ""}
-          </p>
-          <p className="mx-auto mt-3 max-w-2xl text-xs leading-relaxed text-slate-500">
-            {SITE.disclaimer}
-          </p>
-        </div>
-      </footer>
-    </>
   );
 }
 `;
@@ -475,307 +714,1092 @@ export function DraftBanner() {
 }
 `;
 
-const HERO_TSX = `import { SITE } from "@/config/site";
+const SITE_FOOTER_TSX = `import { SITE } from "@/config/site";
 
-export function Hero() {
-  const { business, copy, links } = SITE;
-  const primaryHref = links.whatsappUrl ?? links.telUrl ?? "#contact";
+export function SiteFooter() {
   return (
-    <header className="bg-gradient-to-br from-primary/20 via-background to-secondary/10 px-4 pb-16 pt-24 md:pb-24 md:pt-28">
+    <footer className="border-t border-text/10 bg-surface px-5 py-10">
       <div className="mx-auto max-w-6xl text-center">
-        <p className="text-sm font-semibold uppercase tracking-widest text-primary">
-          {business.category}
-          {business.area ? " \\u00B7 " + business.area : ""}
+        <p className="text-base font-semibold">
+          {SITE.business.name}
+          {SITE.business.area ? " \\u00B7 " + SITE.business.area : ""}
         </p>
-        <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight md:text-5xl">
-          {copy.headline}
-        </h1>
-        <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-slate-600">
-          {copy.subheadline}
+        <p className="mx-auto mt-3 max-w-2xl text-xs leading-relaxed text-text/60">
+          {SITE.disclaimer}
         </p>
-        {/* Google rating/review count intentionally not republished here —
-            see the COMPLIANCE notes in the dashboard project. */}
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+      </div>
+    </footer>
+  );
+}
+`;
+
+const SHARED_TSX = `// Shared, fully data-driven building blocks used by the layout page
+// component. All content comes from SITE (src/config/site.ts).
+import { SITE } from "@/config/site";
+
+export function CtaButtons({
+  secondaryLabel = "Call us",
+  center = false,
+  onDark = false,
+}: {
+  secondaryLabel?: string;
+  center?: boolean;
+  onDark?: boolean;
+}) {
+  const { copy, links } = SITE;
+  const primaryHref = links.whatsappUrl ?? links.telUrl ?? "#contact";
+  const primaryClass = onDark ? "bg-accent" : "bg-primary";
+  const secondaryClass = onDark
+    ? "border-white/80 text-white hover:bg-white/10"
+    : "border-primary text-primary hover:bg-primary/5";
+  return (
+    <div className={"flex flex-wrap gap-4" + (center ? " justify-center" : "")}>
+      <a
+        href={primaryHref}
+        aria-label={links.whatsappUrl ? "Contact us on WhatsApp" : "Contact us"}
+        className={
+          "rounded-btn px-7 py-3 text-base font-semibold text-white shadow-lg transition hover:opacity-90 " +
+          primaryClass
+        }
+      >
+        {copy.ctaText}
+      </a>
+      {links.whatsappUrl && links.telUrl ? (
+        <a
+          href={links.telUrl}
+          aria-label="Call us by phone"
+          className={
+            "rounded-btn border-2 px-7 py-3 text-base font-semibold transition " +
+            secondaryClass
+          }
+        >
+          {secondaryLabel}
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+export function HoursList() {
+  const hours = SITE.business.openingHours;
+  if (hours.length === 0) {
+    return <p className="text-sm text-text/60">Contact us for current opening hours.</p>;
+  }
+  return (
+    <ul>
+      {hours.map((line) => (
+        <li key={line} className="border-b border-text/10 py-2 text-sm last:border-b-0">
+          {line}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function MapEmbed() {
+  const { business, links } = SITE;
+  return (
+    <div>
+      {business.address ? (
+        <p className="text-sm leading-relaxed text-text/70">{business.address}</p>
+      ) : (
+        <p className="text-sm text-text/70">Located in {business.area ?? "Dubai"}.</p>
+      )}
+      {links.mapsUrl ? (
+        <a
+          href={links.mapsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={"Open " + business.name + " on Google Maps"}
+          className="mt-2 inline-block text-sm font-semibold text-primary underline underline-offset-4"
+        >
+          View on Google Maps
+        </a>
+      ) : null}
+      <div className="mt-4 overflow-hidden rounded-xl border border-text/10">
+        <iframe
+          src={links.mapEmbedUrl}
+          title={"Map showing the location of " + business.name}
+          className="h-72 w-full border-0"
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+          allowFullScreen
+        />
+      </div>
+    </div>
+  );
+}
+
+export function TestimonialCards() {
+  const quotes = SITE.copy.testimonials.slice(0, 4);
+  if (quotes.length === 0) return null;
+  return (
+    <div className="mt-8 grid gap-5 sm:grid-cols-2">
+      {quotes.map((quote) => (
+        <blockquote key={quote} className="rounded-xl border border-text/10 bg-surface p-6">
+          <span aria-hidden="true" className="font-heading text-3xl leading-none text-primary">
+            {"\\u201C"}
+          </span>
+          <p className="mt-1 text-sm leading-relaxed text-text/70">{quote}</p>
+        </blockquote>
+      ))}
+    </div>
+  );
+}
+
+export function PullQuotes() {
+  const quotes = SITE.copy.testimonials.slice(0, 3);
+  if (quotes.length === 0) return null;
+  return (
+    <div className="mx-auto max-w-3xl space-y-8">
+      {quotes.map((quote) => (
+        <blockquote
+          key={quote}
+          className="text-center font-heading text-xl leading-relaxed md:text-2xl"
+        >
+          <span aria-hidden="true" className="text-primary">
+            {"\\u201C"}
+          </span>
+          {quote}
+        </blockquote>
+      ))}
+    </div>
+  );
+}
+
+export function Faq() {
+  const items = SITE.copy.faq.slice(0, 5);
+  if (items.length === 0) return null;
+  return (
+    <section id="faq" aria-labelledby="faq-heading" className="px-5 py-section">
+      <div className="mx-auto max-w-3xl">
+        <h2 id="faq-heading" className="text-3xl font-bold">
+          Common questions
+        </h2>
+        <div className="mt-6 space-y-3">
+          {items.map((item) => (
+            <details
+              key={item.question}
+              className="rounded-xl border border-text/10 bg-surface px-5 py-4"
+            >
+              <summary className="cursor-pointer font-semibold">{item.question}</summary>
+              <p className="mt-3 text-sm leading-relaxed text-text/70">{item.answer}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function DemoForm({ heading }: { heading: string }) {
+  const fields = SITE.copy.bookingFormFields.slice(0, 6);
+  if (fields.length === 0) return null;
+  const inputClass =
+    "w-full rounded-md border border-text/20 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary";
+  return (
+    <form
+      aria-label="Demo booking form"
+      className="rounded-xl border border-text/10 bg-surface p-6 shadow-sm"
+    >
+      <p className="text-lg font-bold">{heading}</p>
+      <div className="mt-4 flex flex-col gap-4">
+        {fields.map((label, index) => {
+          const id = "demo-field-" + index;
+          const isLong = /message|detail|request|note/i.test(label);
+          return (
+            <div key={id} className="flex flex-col gap-1">
+              <label htmlFor={id} className="text-sm font-medium">
+                {label}
+              </label>
+              {isLong ? (
+                <textarea id={id} rows={3} placeholder={label} className={inputClass} />
+              ) : (
+                <input id={id} type="text" placeholder={label} className={inputClass} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button
+        type="submit"
+        disabled
+        className="mt-6 w-full cursor-not-allowed rounded-btn bg-text/15 px-6 py-3 font-semibold text-text/60"
+      >
+        Demo form (not yet active)
+      </button>
+      <p className="mt-2 text-center text-xs text-text/50">
+        This form is a non-functional demo.
+      </p>
+    </form>
+  );
+}
+`;
+
+// ---------------------------------------------------------------------------
+// Layout page components (one per LayoutType; only the selected one is
+// included in the export, and src/app/page.tsx composes it)
+// ---------------------------------------------------------------------------
+
+const PREMIUM_SERVICE_TSX = `// Premium service layout: sticky top nav, split hero with a decorative
+// monogram panel, numbered signature list, editorial bands, pull quotes.
+import { CtaButtons, HoursList, MapEmbed, PullQuotes } from "@/components/Shared";
+import { SITE } from "@/config/site";
+
+export function PremiumServicePage() {
+  const { business, copy, links } = SITE;
+  const signatures = (
+    copy.highlightItems.length > 0 ? copy.highlightItems : copy.services
+  ).slice(0, 4);
+  const monogram = (business.name.trim().charAt(0) || "\\u2022").toUpperCase();
+  return (
+    <>
+      <nav
+        aria-label="Main"
+        className="sticky top-8 z-40 border-b border-text/10 bg-surface/90 backdrop-blur"
+      >
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-3">
+          <a href="#top" className="font-heading text-lg font-bold">
+            {business.name}
+          </a>
           <a
-            href={primaryHref}
+            href={links.whatsappUrl ?? links.telUrl ?? "#contact"}
             aria-label={links.whatsappUrl ? "Contact us on WhatsApp" : "Contact us"}
-            className="rounded-lg bg-primary px-7 py-3 text-base font-semibold text-white shadow-lg transition hover:opacity-90"
+            className="rounded-btn bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
           >
             {copy.ctaText}
           </a>
-          {links.telUrl && (
+        </div>
+      </nav>
+      <header
+        id="top"
+        className="mx-auto grid max-w-6xl items-center gap-10 px-5 py-section md:grid-cols-[1.15fr_0.85fr]"
+      >
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+            {business.category}
+            {business.area ? " \\u00B7 " + business.area : ""}
+          </p>
+          <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight md:text-5xl">
+            {copy.headline}
+          </h1>
+          <p className="mt-4 max-w-lg text-lg leading-relaxed text-text/70">
+            {copy.subheadline}
+          </p>
+          <div className="mt-8">
+            <CtaButtons />
+          </div>
+        </div>
+        <div
+          role="img"
+          aria-label="Decorative brand panel (replace with a real photo)"
+          className="flex aspect-[4/5] items-center justify-center rounded-2xl bg-gradient-to-br from-primary/25 via-accent/15 to-secondary/10"
+        >
+          <span aria-hidden="true" className="font-heading text-8xl text-primary/50 md:text-9xl">
+            {monogram}
+          </span>
+        </div>
+      </header>
+      <main>
+        <section id="signature" aria-labelledby="signature-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-6xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Signature</p>
+            <h2 id="signature-heading" className="mt-2 text-3xl font-bold">
+              What clients come here for
+            </h2>
+            <div className="mt-8 divide-y divide-text/10 border-y border-text/10">
+              {signatures.map((item, index) => (
+                <div key={item.title} className="grid grid-cols-[56px_1fr] gap-5 py-6">
+                  <span aria-hidden="true" className="font-heading text-2xl text-primary">
+                    {"0" + (index + 1)}
+                  </span>
+                  <div>
+                    <h3 className="text-xl font-semibold">{item.title}</h3>
+                    <p className="mt-1 max-w-2xl text-[15px] leading-relaxed text-text/70">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section
+          id="about"
+          aria-labelledby="about-heading"
+          className="border-y border-text/10 bg-surface px-5 py-section"
+        >
+          <div className="mx-auto grid max-w-6xl gap-9 md:grid-cols-2">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">About</p>
+              <h2 id="about-heading" className="mt-2 text-3xl font-bold">
+                About {business.name}
+              </h2>
+              <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-text/70">
+                {copy.about}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold">Why clients choose us</h3>
+              <ul className="mt-4 space-y-3">
+                {copy.whyChooseUs.map((reason) => (
+                  <li key={reason} className="flex gap-3 text-text/70">
+                    <span aria-hidden="true" className="text-accent">
+                      {"\\u2014"}
+                    </span>
+                    {reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+        <section id="reviews" aria-labelledby="reviews-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-6xl">
+            <h2
+              id="reviews-heading"
+              className="text-center text-xs font-bold uppercase tracking-[0.16em] text-primary"
+            >
+              What clients say
+            </h2>
+            <div className="mt-8">
+              <PullQuotes />
+            </div>
+          </div>
+        </section>
+        <section id="visit" aria-labelledby="visit-heading" className="bg-primary/5 px-5 py-section">
+          <div className="mx-auto max-w-6xl">
+            <h2 id="visit-heading" className="text-3xl font-bold">
+              Hours and location
+            </h2>
+            <div className="mt-8 grid gap-9 md:grid-cols-2">
+              <div>
+                <HoursList />
+              </div>
+              <MapEmbed />
+            </div>
+          </div>
+        </section>
+        <section id="contact" aria-labelledby="contact-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 id="contact-heading" className="text-3xl font-bold">
+              {copy.ctaText}
+            </h2>
+            <p className="mt-4 leading-relaxed text-text/70">{copy.contactSection}</p>
+            <div className="mt-8 flex justify-center">
+              <CtaButtons secondaryLabel={business.phone ?? "Call us"} center />
+            </div>
+          </div>
+        </section>
+      </main>
+    </>
+  );
+}
+`;
+
+const LOCAL_PRACTICAL_TSX = `// Local practical layout: dark phone strip, checkmark job list with an hours
+// card aside, accent-bordered service rows, tick strip, FAQ, dark quote band.
+import {
+  CtaButtons,
+  DemoForm,
+  Faq,
+  HoursList,
+  MapEmbed,
+  TestimonialCards,
+} from "@/components/Shared";
+import { SITE } from "@/config/site";
+
+export function LocalPracticalPage() {
+  const { business, copy, links } = SITE;
+  const jobs = (
+    copy.highlightItems.length > 0 ? copy.highlightItems : copy.services
+  ).slice(0, 4);
+  return (
+    <>
+      {links.telUrl ? (
+        <div className="bg-secondary text-white">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-2.5 text-sm">
+            <span>
+              {business.category}
+              {business.area ? " \\u00B7 " + business.area : ""}
+            </span>
+            <a
+              href={links.telUrl}
+              aria-label="Call us now"
+              className="font-bold underline underline-offset-4"
+            >
+              {business.phone ?? "Call now"}
+            </a>
+          </div>
+        </div>
+      ) : null}
+      <header className="mx-auto grid max-w-6xl items-start gap-9 px-5 py-section md:grid-cols-[1.2fr_0.8fr]">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+            {business.category}
+            {business.area ? " in " + business.area : ""}
+          </p>
+          <h1 className="mt-3 text-4xl font-bold leading-tight tracking-tight md:text-5xl">
+            {copy.headline}
+          </h1>
+          <p className="mt-3 text-lg leading-relaxed text-text/70">{copy.subheadline}</p>
+          <ul className="mb-7 mt-5 space-y-2.5">
+            {jobs.map((job) => (
+              <li key={job.title} className="flex items-start gap-3 font-semibold">
+                <span
+                  aria-hidden="true"
+                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-bold text-white"
+                >
+                  {"\\u2713"}
+                </span>
+                {job.title}
+              </li>
+            ))}
+          </ul>
+          <CtaButtons />
+        </div>
+        <aside className="rounded-xl border border-text/10 bg-surface p-6 shadow-sm">
+          <h2 className="mb-2 text-lg font-bold">Opening hours</h2>
+          <HoursList />
+        </aside>
+      </header>
+      <main>
+        <section id="services" aria-labelledby="services-heading" className="px-5 pb-section">
+          <div className="mx-auto max-w-6xl">
+            <h2 id="services-heading" className="text-3xl font-bold">
+              What we do
+            </h2>
+            <div className="mt-6 grid gap-4">
+              {copy.services.map((service) => (
+                <div
+                  key={service.title}
+                  className="rounded-lg border border-l-4 border-text/10 border-l-primary bg-surface px-6 py-4"
+                >
+                  <h3 className="text-lg font-semibold">{service.title}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-text/70">
+                    {service.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section id="why" aria-labelledby="why-heading" className="bg-primary/5 px-5 py-section">
+          <div className="mx-auto max-w-6xl">
+            <h2 id="why-heading" className="text-3xl font-bold">
+              Why customers come back
+            </h2>
+            <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+              {copy.whyChooseUs.map((reason) => (
+                <li key={reason} className="flex items-start gap-2.5 font-semibold">
+                  <span aria-hidden="true" className="font-bold text-primary">
+                    {"\\u2713"}
+                  </span>
+                  {reason}
+                </li>
+              ))}
+            </ul>
+            <TestimonialCards />
+          </div>
+        </section>
+        <Faq />
+        <section
+          id="contact"
+          aria-labelledby="contact-heading"
+          className="bg-secondary px-5 py-section text-white"
+        >
+          <div className="mx-auto grid max-w-6xl gap-9 md:grid-cols-2">
+            <div>
+              <h2 id="contact-heading" className="text-3xl font-bold text-white">
+                {copy.ctaText}
+              </h2>
+              <p className="mt-4 leading-relaxed text-white/75">{copy.contactSection}</p>
+              <div className="mt-7">
+                <CtaButtons secondaryLabel={business.phone ?? "Call us"} onDark />
+              </div>
+            </div>
+            <DemoForm heading="Request a quote" />
+          </div>
+        </section>
+        <section id="location" aria-labelledby="location-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-6xl">
+            <h2 id="location-heading" className="text-3xl font-bold">
+              Find us
+            </h2>
+            <div className="mt-6">
+              <MapEmbed />
+            </div>
+          </div>
+        </section>
+      </main>
+    </>
+  );
+}
+`;
+
+const HOSPITALITY_TSX = `// Hospitality layout: centered hero with kicker and ornament divider, menu
+// highlights with dotted leaders, visit-us split, warm gradient CTA band.
+import { CtaButtons, HoursList, MapEmbed, TestimonialCards } from "@/components/Shared";
+import { SITE } from "@/config/site";
+
+export function HospitalityPage() {
+  const { business, copy } = SITE;
+  const menu = (
+    copy.highlightItems.length > 0 ? copy.highlightItems : copy.services
+  ).slice(0, 6);
+  return (
+    <>
+      <header className="bg-gradient-to-b from-primary/10 to-background px-5 py-section text-center">
+        <div className="mx-auto max-w-3xl">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+            {business.category}
+            {business.area ? " \\u00B7 " + business.area : ""}
+          </p>
+          <h1 className="mt-4 text-4xl font-bold leading-tight md:text-6xl">{copy.headline}</h1>
+          <p className="mx-auto mt-4 max-w-xl text-lg leading-relaxed text-text/70">
+            {copy.subheadline}
+          </p>
+          <div className="mt-8 flex justify-center">
+            <CtaButtons center />
+          </div>
+          <p aria-hidden="true" className="mt-6 tracking-[0.6em] text-accent">
+            {"\\u2726 \\u2726 \\u2726"}
+          </p>
+        </div>
+      </header>
+      <main>
+        <section
+          id="menu"
+          aria-labelledby="menu-heading"
+          className="border-y border-text/10 bg-surface px-5 py-section"
+        >
+          <div className="mx-auto max-w-3xl">
+            <p className="text-center text-xs font-bold uppercase tracking-[0.16em] text-primary">
+              From the reviews
+            </p>
+            <h2 id="menu-heading" className="mt-2 text-center text-3xl font-bold">
+              What people order again
+            </h2>
+            <div className="mt-8">
+              {menu.map((item) => (
+                <div
+                  key={item.title}
+                  className="border-b border-dashed border-text/20 py-4 last:border-b-0"
+                >
+                  <div className="flex items-baseline gap-3">
+                    <h3 className="whitespace-nowrap text-lg font-semibold">{item.title}</h3>
+                    <span
+                      aria-hidden="true"
+                      className="-translate-y-1 flex-1 border-b-2 border-dotted border-text/30"
+                    />
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-text/70">{item.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section id="about" aria-labelledby="about-heading" className="px-5 py-section text-center">
+          <div className="mx-auto max-w-4xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Our place</p>
+            <h2 id="about-heading" className="mt-2 text-3xl font-bold">
+              About {business.name}
+            </h2>
+            <p className="mx-auto mt-4 max-w-2xl whitespace-pre-line text-base leading-relaxed text-text/70">
+              {copy.about}
+            </p>
+            <div className="text-left">
+              <TestimonialCards />
+            </div>
+          </div>
+        </section>
+        <section id="visit" aria-labelledby="visit-heading" className="px-5 pb-section">
+          <div className="mx-auto max-w-6xl">
+            <h2 id="visit-heading" className="text-3xl font-bold">
+              Visit us
+            </h2>
+            <div className="mt-6 grid gap-8 md:grid-cols-2">
+              <div className="rounded-xl border border-text/10 bg-surface p-6">
+                <h3 className="mb-2 text-lg font-semibold">Opening hours</h3>
+                <HoursList />
+              </div>
+              <MapEmbed />
+            </div>
+          </div>
+        </section>
+        <section
+          id="contact"
+          aria-labelledby="contact-heading"
+          className="bg-gradient-to-br from-primary/15 to-accent/10 px-5 py-section text-center"
+        >
+          <div className="mx-auto max-w-2xl">
+            <h2 id="contact-heading" className="text-3xl font-bold">
+              {copy.ctaText}
+            </h2>
+            <p className="mx-auto mt-4 max-w-xl leading-relaxed text-text/70">
+              {copy.contactSection}
+            </p>
+            <div className="mt-8 flex justify-center">
+              <CtaButtons secondaryLabel={business.phone ?? "Call us"} center />
+            </div>
+          </div>
+        </section>
+      </main>
+    </>
+  );
+}
+`;
+
+const WELLNESS_CLINIC_TSX = `// Wellness & clinic layout: hero with a demo booking form card, trust strip,
+// 2-column treatment grid, FAQ, calm hours/location band.
+import {
+  CtaButtons,
+  DemoForm,
+  Faq,
+  HoursList,
+  MapEmbed,
+  TestimonialCards,
+} from "@/components/Shared";
+import { SITE } from "@/config/site";
+
+export function WellnessClinicPage() {
+  const { business, copy } = SITE;
+  const treatments = (
+    copy.highlightItems.length > 0 ? copy.highlightItems : copy.services
+  ).slice(0, 6);
+  const trust = copy.trustSignals.slice(0, 4);
+  return (
+    <>
+      <header className="mx-auto grid max-w-6xl items-start gap-10 px-5 py-section md:grid-cols-[1.15fr_0.85fr]">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+            {business.category}
+            {business.area ? " \\u00B7 " + business.area : ""}
+          </p>
+          <h1 className="mt-3 text-4xl font-bold leading-tight tracking-tight md:text-5xl">
+            {copy.headline}
+          </h1>
+          <p className="mt-4 max-w-lg text-lg leading-relaxed text-text/70">
+            {copy.subheadline}
+          </p>
+          <div className="mt-7">
+            <CtaButtons secondaryLabel="Call the clinic" />
+          </div>
+          <ul className="mt-9 grid gap-3 sm:grid-cols-2">
+            {trust.map((signal) => (
+              <li
+                key={signal}
+                className="flex items-start gap-2.5 rounded-lg border border-text/10 bg-surface px-4 py-3 text-sm font-semibold"
+              >
+                <span aria-hidden="true" className="font-bold text-primary">
+                  {"\\u2713"}
+                </span>
+                {signal}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <DemoForm heading={copy.ctaText} />
+      </header>
+      <main>
+        <section
+          id="treatments"
+          aria-labelledby="treatments-heading"
+          className="bg-primary/5 px-5 py-section"
+        >
+          <div className="mx-auto max-w-6xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Care</p>
+            <h2 id="treatments-heading" className="mt-2 text-3xl font-bold">
+              Treatments and services
+            </h2>
+            <div className="mt-7 grid gap-5 md:grid-cols-2">
+              {treatments.map((treatment) => (
+                <div key={treatment.title} className="rounded-xl border border-text/10 bg-surface p-6">
+                  <h3 className="text-lg font-semibold">{treatment.title}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-text/70">
+                    {treatment.description}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section id="about" aria-labelledby="about-heading" className="px-5 py-section">
+          <div className="mx-auto grid max-w-6xl gap-9 md:grid-cols-2">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">About</p>
+              <h2 id="about-heading" className="mt-2 text-3xl font-bold">
+                About {business.name}
+              </h2>
+              <p className="mt-4 whitespace-pre-line text-base leading-relaxed text-text/70">
+                {copy.about}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold">What patients and visitors say</h3>
+              <TestimonialCards />
+            </div>
+          </div>
+        </section>
+        <Faq />
+        <section id="visit" aria-labelledby="visit-heading" className="bg-primary/5 px-5 py-section">
+          <div className="mx-auto grid max-w-6xl gap-9 md:grid-cols-2">
+            <div>
+              <h2 id="visit-heading" className="text-3xl font-bold">
+                Hours
+              </h2>
+              <div className="mt-5">
+                <HoursList />
+              </div>
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold">Location</h2>
+              <div className="mt-5">
+                <MapEmbed />
+              </div>
+            </div>
+          </div>
+        </section>
+        <section id="contact" aria-labelledby="contact-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 id="contact-heading" className="text-3xl font-bold">
+              {copy.ctaText}
+            </h2>
+            <p className="mt-4 leading-relaxed text-text/70">{copy.contactSection}</p>
+            <div className="mt-8 flex justify-center">
+              <CtaButtons secondaryLabel={business.phone ?? "Call us"} center />
+            </div>
+          </div>
+        </section>
+      </main>
+    </>
+  );
+}
+`;
+
+const CREATIVE_PORTFOLIO_TSX = `// Creative portfolio layout: oversized display headline with an accent rule
+// and service chips, alternating gradient work rows, full-bleed dark CTA.
+import { CtaButtons, HoursList, MapEmbed, PullQuotes } from "@/components/Shared";
+import { SITE } from "@/config/site";
+
+const PANEL_CLASSES = [
+  "bg-gradient-to-br from-primary to-secondary",
+  "bg-gradient-to-br from-accent to-primary",
+  "bg-gradient-to-br from-secondary to-accent",
+  "bg-gradient-to-br from-primary to-accent",
+];
+
+export function CreativePortfolioPage() {
+  const { business, copy } = SITE;
+  const projects = (
+    copy.highlightItems.length > 0 ? copy.highlightItems : copy.services
+  ).slice(0, 4);
+  return (
+    <>
+      <header className="mx-auto max-w-6xl px-5 py-section">
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-text/60">
+          {business.name}
+          {" \\u2014 " + business.category}
+          {business.area ? ", " + business.area : ""}
+        </p>
+        <h1 className="mt-5 max-w-4xl text-5xl font-bold leading-[1.05] tracking-tighter md:text-7xl">
+          {copy.headline}
+        </h1>
+        <div aria-hidden="true" className="mt-6 h-1.5 w-16 bg-accent" />
+        <p className="mt-6 max-w-xl text-lg leading-relaxed text-text/70">{copy.subheadline}</p>
+        <div className="mt-8">
+          <CtaButtons />
+        </div>
+        <div className="mt-6 flex flex-wrap gap-2.5">
+          {copy.services.slice(0, 6).map((service) => (
+            <span
+              key={service.title}
+              className="rounded-full border border-text/70 px-4 py-1.5 text-sm font-semibold"
+            >
+              {service.title}
+            </span>
+          ))}
+        </div>
+      </header>
+      <main>
+        <section id="work" aria-labelledby="work-heading" className="px-5 pb-section">
+          <div className="mx-auto max-w-6xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+              What we make
+            </p>
+            <h2 id="work-heading" className="mt-2 text-3xl font-bold">
+              Selected work and specialties
+            </h2>
+            <div className="mt-8">
+              {projects.map((project, index) => (
+                <div
+                  key={project.title}
+                  className="grid items-center gap-7 border-t border-text/10 py-10 md:grid-cols-2"
+                >
+                  <div
+                    role="img"
+                    aria-label={
+                      "Placeholder panel for " + project.title + " (replace with a real photo)"
+                    }
+                    className={
+                      "flex aspect-[16/10] items-end rounded-xl p-5 " +
+                      PANEL_CLASSES[index % PANEL_CLASSES.length] +
+                      (index % 2 === 1 ? " md:order-2" : "")
+                    }
+                  >
+                    <span className="text-xs font-bold uppercase tracking-widest text-white drop-shadow">
+                      {project.title}
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold tracking-tight md:text-3xl">
+                      {project.title}
+                    </h3>
+                    <p className="mt-2 max-w-md leading-relaxed text-text/70">
+                      {project.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section
+          id="about"
+          aria-labelledby="about-heading"
+          className="border-t border-text/10 px-5 py-section"
+        >
+          <div className="mx-auto max-w-3xl">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Studio</p>
+            <h2 id="about-heading" className="mt-2 text-3xl font-bold">
+              About {business.name}
+            </h2>
+            <p className="mt-4 whitespace-pre-line leading-relaxed text-text/70">{copy.about}</p>
+            <div className="mt-9">
+              <PullQuotes />
+            </div>
+          </div>
+        </section>
+        <section
+          id="contact"
+          aria-labelledby="contact-heading"
+          className="bg-text px-5 py-section text-background"
+        >
+          <div className="mx-auto max-w-6xl">
+            <h2
+              id="contact-heading"
+              className="text-4xl font-bold tracking-tight text-background md:text-5xl"
+            >
+              {copy.ctaText}
+            </h2>
+            <p className="mt-4 max-w-xl leading-relaxed text-background/70">
+              {copy.contactSection}
+            </p>
+            <div className="mt-8">
+              <CtaButtons secondaryLabel={business.phone ?? "Call us"} onDark />
+            </div>
+          </div>
+        </section>
+        <section id="visit" aria-labelledby="visit-heading" className="px-5 py-section">
+          <div className="mx-auto max-w-6xl">
+            <h2 id="visit-heading" className="text-3xl font-bold">
+              Find the studio
+            </h2>
+            <div className="mt-6 grid gap-9 md:grid-cols-2">
+              <MapEmbed />
+              <div>
+                <h3 className="mb-2 text-lg font-semibold">Studio hours</h3>
+                <HoursList />
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </>
+  );
+}
+`;
+
+const SIMPLE_LANDING_TSX = `// Simple local landing layout: narrow single column, giant contact actions,
+// short about, tick service list, hours, and a map.
+import { HoursList, MapEmbed, TestimonialCards } from "@/components/Shared";
+import { SITE } from "@/config/site";
+
+export function SimpleLandingPage() {
+  const { business, copy, links } = SITE;
+  return (
+    <div className="mx-auto max-w-xl px-5">
+      <header className="py-section text-center">
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">
+          {business.category}
+          {business.area ? " \\u00B7 " + business.area : ""}
+        </p>
+        <h1 className="mt-3 text-3xl font-bold leading-tight md:text-4xl">{copy.headline}</h1>
+        <p className="mt-3 leading-relaxed text-text/70">{copy.subheadline}</p>
+        <div className="mt-7 grid gap-3">
+          {links.telUrl ? (
             <a
               href={links.telUrl}
               aria-label="Call us by phone"
-              className="rounded-lg border-2 border-primary bg-white/80 px-7 py-3 text-base font-semibold text-primary transition hover:bg-white"
+              className="block rounded-btn bg-primary px-6 py-4 text-center text-lg font-bold text-white shadow-lg transition hover:opacity-90"
             >
-              Call us
+              Call {business.phone ?? "us"}
             </a>
-          )}
+          ) : null}
+          {links.whatsappUrl ? (
+            <a
+              href={links.whatsappUrl}
+              aria-label="Message us on WhatsApp"
+              className="block rounded-btn bg-[#16a34a] px-6 py-4 text-center text-lg font-bold text-white transition hover:opacity-90"
+            >
+              {copy.ctaText}
+            </a>
+          ) : null}
+          {links.mapsUrl ? (
+            <a
+              href={links.mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Get directions on Google Maps"
+              className="block rounded-btn border-2 border-text px-6 py-4 text-center text-lg font-bold transition hover:bg-text/5"
+            >
+              Get directions
+            </a>
+          ) : null}
         </div>
-      </div>
-    </header>
-  );
-}
-`;
-
-const ABOUT_TSX = `import { SITE } from "@/config/site";
-
-export function About() {
-  const { business, copy } = SITE;
-  return (
-    <section id="about" aria-labelledby="about-heading" className="px-4 py-16">
-      <div className="mx-auto max-w-6xl">
-        <h2 id="about-heading" className="text-3xl font-bold">
-          About {business.name}
-        </h2>
-        <p className="mt-5 max-w-3xl text-base leading-relaxed text-slate-700">{copy.about}</p>
-        {copy.imageRecommendations.length > 0 && (
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 md:grid-cols-3">
-            {copy.imageRecommendations.slice(0, 3).map((idea) => (
-              <figure key={idea} className="flex flex-col gap-2">
-                <div
-                  role="img"
-                  aria-label={"Image placeholder: " + idea}
-                  className="aspect-video w-full rounded-lg bg-gradient-to-br from-primary/40 to-accent/30"
-                />
-                <figcaption className="text-xs text-slate-500">Suggested image: {idea}</figcaption>
-              </figure>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-`;
-
-const SERVICES_TSX = `import { SITE } from "@/config/site";
-
-export function Services() {
-  return (
-    <section id="services" aria-labelledby="services-heading" className="bg-primary/5 px-4 py-16">
-      <div className="mx-auto max-w-6xl">
-        <h2 id="services-heading" className="text-3xl font-bold">
-          Our services
-        </h2>
-        <div className="mt-8 grid gap-6 md:grid-cols-3">
-          {SITE.copy.services.map((service) => (
-            <div key={service.title} className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold">{service.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">{service.description}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-`;
-
-const WHY_US_TSX = `import { SITE } from "@/config/site";
-
-export function WhyUs() {
-  return (
-    <section id="why-us" aria-labelledby="why-us-heading" className="px-4 py-16">
-      <div className="mx-auto max-w-6xl">
-        <h2 id="why-us-heading" className="text-3xl font-bold">
-          Why choose us
-        </h2>
-        <ul className="mt-8 grid gap-4 md:grid-cols-2">
-          {SITE.copy.whyChooseUs.map((reason) => (
-            <li key={reason} className="flex items-start gap-3">
-              <span
-                aria-hidden="true"
-                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white"
-              >
-                {"\\u2713"}
-              </span>
-              <span className="text-slate-700">{reason}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-`;
-
-const TESTIMONIALS_TSX = `import { SITE } from "@/config/site";
-
-export function Testimonials() {
-  return (
-    <section
-      id="testimonials"
-      aria-labelledby="testimonials-heading"
-      className="bg-secondary/5 px-4 py-16"
-    >
-      <div className="mx-auto max-w-6xl">
-        <h2 id="testimonials-heading" className="text-3xl font-bold">
-          What customers say
-        </h2>
-        <div className="mt-8 grid gap-6 md:grid-cols-3">
-          {SITE.copy.testimonials.map((quote) => (
-            <blockquote key={quote} className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-              <span aria-hidden="true" className="font-serif text-4xl leading-none text-primary">
-                {"\\u201C"}
-              </span>
-              <p className="mt-2 text-sm leading-relaxed text-slate-700">{quote}</p>
-            </blockquote>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-`;
-
-const HOURS_TSX = `import { SITE } from "@/config/site";
-
-export function Hours() {
-  const hours = SITE.business.openingHours;
-  return (
-    <section id="hours" aria-labelledby="hours-heading" className="px-4 py-16">
-      <div className="mx-auto max-w-6xl">
-        <h2 id="hours-heading" className="text-3xl font-bold">
-          Opening hours
-        </h2>
-        <ul className="mt-6 max-w-xl rounded-lg border border-slate-200 bg-white px-6 py-4 shadow-sm">
-          {hours.length > 0 ? (
-            hours.map((line) => (
-              <li
-                key={line}
-                className="border-b border-slate-100 py-2 text-sm text-slate-700 last:border-b-0"
-              >
-                {line}
-              </li>
-            ))
-          ) : (
-            <li className="py-2 text-sm text-slate-600">Contact us for current opening hours.</li>
-          )}
-        </ul>
-      </div>
-    </section>
-  );
-}
-`;
-
-const LOCATION_MAP_TSX = `import { SITE } from "@/config/site";
-
-export function LocationMap() {
-  const { business, links } = SITE;
-  return (
-    <section id="location" aria-labelledby="location-heading" className="px-4 py-16">
-      <div className="mx-auto max-w-6xl">
-        <h2 id="location-heading" className="text-3xl font-bold">
-          Find us
-        </h2>
-        <div className="mt-6 grid gap-8 md:grid-cols-2">
-          <div>
-            {business.address ? (
-              <p className="text-base leading-relaxed text-slate-700">{business.address}</p>
-            ) : (
-              <p className="text-base text-slate-600">Located in {business.area ?? "Dubai"}.</p>
-            )}
-            {links.mapsUrl && (
-              <a
-                href={links.mapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={"Open " + business.name + " on Google Maps"}
-                className="mt-4 inline-block font-semibold text-primary underline underline-offset-4"
-              >
-                View on Google Maps
-              </a>
-            )}
-          </div>
-          <div className="overflow-hidden rounded-lg border border-slate-200 shadow-sm">
-            <iframe
-              src={links.mapEmbedUrl}
-              title={"Map showing the location of " + business.name}
-              className="h-72 w-full border-0"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              allowFullScreen
-            />
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-`;
-
-const CONTACT_CTA_TSX = `import { SITE } from "@/config/site";
-
-export function ContactCta() {
-  const { business, copy, links } = SITE;
-  return (
-    <section
-      id="contact"
-      aria-labelledby="contact-heading"
-      className="bg-gradient-to-br from-primary/15 to-accent/10 px-4 py-16"
-    >
-      <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-2">
-        <div>
-          <h2 id="contact-heading" className="text-3xl font-bold">
-            Get in touch
+      </header>
+      <main>
+        <section id="about" aria-labelledby="about-heading" className="border-t border-text/10 py-10">
+          <h2 id="about-heading" className="text-2xl font-bold">
+            About {business.name}
           </h2>
-          <p className="mt-4 max-w-xl text-base leading-relaxed text-slate-700">
-            {copy.contactSection}
+          <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-text/70">
+            {copy.about}
           </p>
-          <div className="mt-8 flex flex-wrap gap-4">
-            {links.whatsappUrl && (
-              <a
-                href={links.whatsappUrl}
-                aria-label="Message us on WhatsApp"
-                className="rounded-lg bg-primary px-6 py-3 font-semibold text-white shadow transition hover:opacity-90"
+        </section>
+        <section
+          id="services"
+          aria-labelledby="services-heading"
+          className="border-t border-text/10 py-10"
+        >
+          <h2 id="services-heading" className="text-2xl font-bold">
+            Services
+          </h2>
+          <ul className="mt-4">
+            {copy.services.slice(0, 5).map((service) => (
+              <li
+                key={service.title}
+                className="flex items-start gap-3 border-b border-text/10 py-3 last:border-b-0"
               >
-                WhatsApp us
-              </a>
-            )}
-            {links.telUrl && (
-              <a
-                href={links.telUrl}
-                aria-label="Call us by phone"
-                className="rounded-lg border-2 border-primary px-6 py-3 font-semibold text-primary transition hover:bg-primary/5"
-              >
-                {business.phone ?? "Call us"}
-              </a>
-            )}
-          </div>
-        </div>
-        <form className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm" aria-label="Demo booking form">
-          <h3 className="text-lg font-semibold">Request a booking</h3>
-          <div className="mt-4 flex flex-col gap-4">
-            {copy.bookingFormFields.map((label, index) => {
-              const id = "booking-field-" + index;
-              return (
-                <div key={id} className="flex flex-col gap-1">
-                  <label htmlFor={id} className="text-sm font-medium text-slate-700">
-                    {label}
-                  </label>
-                  <input
-                    id={id}
-                    type="text"
-                    placeholder={label}
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-              );
-            })}
-          </div>
-          <button
-            type="submit"
-            disabled
-            className="mt-6 w-full cursor-not-allowed rounded-lg bg-slate-300 px-6 py-3 font-semibold text-slate-600"
+                <span aria-hidden="true" className="font-bold text-primary">
+                  {"\\u2713"}
+                </span>
+                <span>
+                  <span className="block font-semibold">{service.title}</span>
+                  <span className="text-sm text-text/60">{service.description}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+        {copy.testimonials.length > 0 ? (
+          <section
+            id="reviews"
+            aria-labelledby="reviews-heading"
+            className="border-t border-text/10 py-10"
           >
-            Demo form
-          </button>
-          <p className="mt-2 text-center text-xs text-slate-500">This form is a non-functional demo.</p>
-        </form>
-      </div>
-    </section>
+            <h2 id="reviews-heading" className="text-2xl font-bold">
+              What customers say
+            </h2>
+            <TestimonialCards />
+          </section>
+        ) : null}
+        <section id="hours" aria-labelledby="hours-heading" className="border-t border-text/10 py-10">
+          <h2 id="hours-heading" className="text-2xl font-bold">
+            Opening hours
+          </h2>
+          <div className="mt-3">
+            <HoursList />
+          </div>
+        </section>
+        <section id="visit" aria-labelledby="visit-heading" className="border-t border-text/10 py-10">
+          <h2 id="visit-heading" className="text-2xl font-bold">
+            Find us
+          </h2>
+          <div className="mt-3">
+            <MapEmbed />
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 `;
+
+interface LayoutModule {
+  /** Project-relative path of the layout component file. */
+  file: string;
+  /** Exported component name. */
+  component: string;
+  /** Import specifier used by page.tsx. */
+  importPath: string;
+  /** File contents. */
+  source: string;
+}
+
+const LAYOUT_MODULES: Record<LayoutType, LayoutModule> = {
+  "premium-service": {
+    file: "src/components/layouts/PremiumService.tsx",
+    component: "PremiumServicePage",
+    importPath: "@/components/layouts/PremiumService",
+    source: PREMIUM_SERVICE_TSX,
+  },
+  "local-practical": {
+    file: "src/components/layouts/LocalPractical.tsx",
+    component: "LocalPracticalPage",
+    importPath: "@/components/layouts/LocalPractical",
+    source: LOCAL_PRACTICAL_TSX,
+  },
+  hospitality: {
+    file: "src/components/layouts/Hospitality.tsx",
+    component: "HospitalityPage",
+    importPath: "@/components/layouts/Hospitality",
+    source: HOSPITALITY_TSX,
+  },
+  "wellness-clinic": {
+    file: "src/components/layouts/WellnessClinic.tsx",
+    component: "WellnessClinicPage",
+    importPath: "@/components/layouts/WellnessClinic",
+    source: WELLNESS_CLINIC_TSX,
+  },
+  "creative-portfolio": {
+    file: "src/components/layouts/CreativePortfolio.tsx",
+    component: "CreativePortfolioPage",
+    importPath: "@/components/layouts/CreativePortfolio",
+    source: CREATIVE_PORTFOLIO_TSX,
+  },
+  "simple-landing": {
+    file: "src/components/layouts/SimpleLanding.tsx",
+    component: "SimpleLandingPage",
+    importPath: "@/components/layouts/SimpleLanding",
+    source: SIMPLE_LANDING_TSX,
+  },
+};
+
+/** page.tsx: draft banner + the selected layout page + shared footer. */
+function buildPageTsx(mod: LayoutModule): string {
+  return `import { DraftBanner } from "@/components/DraftBanner";
+import { SiteFooter } from "@/components/SiteFooter";
+import { ${mod.component} } from "${mod.importPath}";
+
+export default function HomePage() {
+  return (
+    <>
+      <DraftBanner />
+      <${mod.component} />
+      <SiteFooter />
+    </>
+  );
+}
+`;
+}
