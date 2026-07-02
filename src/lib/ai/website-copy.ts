@@ -113,7 +113,7 @@ VOICE RULES — the copy must never feel AI-generated:
 - BANNED phrases (never use any of these or close variants): ${GENERIC_AI_PHRASES.join("; ")}.
 - No emoji. No exclamation marks in headings. No rhetorical questions in the hero.
 - Write like a person: concrete nouns from the reviews (the actual services, the area, what customers do there) instead of abstractions.
-- The headline names a real, specific benefit or specialty — not "Welcome to X" and not a slogan that could fit any business.
+- THE HEADLINE TEST: the headline (or subheadline) must name the single most-praised specific thing from the reviews — the actual service, dish, or job (balayage, karak, AC repair, contract mark-ups). "Professional <category> services in <area>" FAILS this test; it could fit a thousand businesses. Write the headline a regular customer would nod at.
 - A women's salon in Jumeirah must not sound like a car garage in Al Quoz; a dental clinic must not sound like a cafe. Match the trade.
 - Mention the Dubai area naturally 2-3 times across the site, never stuffed.
 
@@ -341,6 +341,68 @@ function finalizeCopy(
   };
 }
 
+/** Headline patterns that could describe a thousand businesses. */
+const WEAK_HEADLINE_PATTERN =
+  /high-?quality|top-?quality|professional\s+\w+(\s+\w+)?\s+services|premium\s+services|quality\s+(services|care)|welcome\s+to|your\s+destination|excellence/i;
+
+/** Concrete nouns the headline could anchor on, ranked by evidence strength. */
+function concreteAnchors(
+  input: BusinessAnalysisInput,
+  copy: WebsiteCopyJson
+): string[] {
+  const anchors: string[] = [];
+  for (const h of copy.highlight_items ?? []) anchors.push(h.title);
+  for (const k of input.keywords.slice(0, 8)) anchors.push(k.keyword);
+  for (const s of copy.services) anchors.push(s.title);
+  return Array.from(new Set(anchors.map((a) => a.trim()).filter(Boolean)));
+}
+
+function headlineIsWeak(copy: WebsiteCopyJson, input: BusinessAnalysisInput): boolean {
+  const combined = `${copy.headline} ${copy.subheadline}`.toLowerCase();
+  if (WEAK_HEADLINE_PATTERN.test(copy.headline)) return true;
+  // Strong enough if any concrete anchor word (4+ chars) appears in hero text.
+  const anchorWords = concreteAnchors(input, copy)
+    .flatMap((a) => a.toLowerCase().split(/[^a-z]+/))
+    .filter((w) => w.length >= 4 && !["services", "service", "dubai"].includes(w));
+  return !anchorWords.some((w) => combined.includes(w));
+}
+
+/**
+ * Focused rescue pass: rewrite only the hero when the full generation keeps
+ * producing an any-business headline. Deterministic trigger, single small call.
+ */
+async function rescueHeadline(
+  copy: WebsiteCopyJson,
+  input: BusinessAnalysisInput,
+  opts: { apiKey: string; model: string }
+): Promise<WebsiteCopyJson> {
+  const anchors = concreteAnchors(input, copy).slice(0, 8);
+  try {
+    const result = await chatJson<{ headline?: string; subheadline?: string }>({
+      apiKey: opts.apiKey,
+      model: opts.model,
+      temperature: 0.7,
+      system: `You fix weak website headlines for a Dubai business. The current headline could describe any business — rewrite it so a regular customer would recognize THIS place. Rules: name at least one concrete anchor from the provided list (the actual service/dish/job customers praise); mention the Dubai area in the headline or subheadline; no words like "high-quality", "professional services", "premium", "excellence", "welcome"; no emoji, no exclamation marks; headline under 12 words. Respond with VALID JSON ONLY: {"headline": string, "subheadline": string}.`,
+      user: `Business: ${input.name} — ${input.category} in ${input.area ?? "Dubai"}.
+Concrete anchors customers actually mention: ${anchors.join("; ")}.
+Current weak headline: ${copy.headline}
+Current subheadline: ${copy.subheadline}`,
+    });
+    const headline = sanitizeCopy(result.headline ?? "").trim();
+    const subheadline = sanitizeCopy(result.subheadline ?? "").trim();
+    if (headline && !WEAK_HEADLINE_PATTERN.test(headline)) {
+      return {
+        ...copy,
+        headline,
+        subheadline: subheadline || copy.subheadline,
+      };
+    }
+  } catch {
+    // Keep the original copy when the rescue call fails — never block the run.
+  }
+  return copy;
+}
+
 export interface GenerateCopyOptions {
   apiKey: string;
   model: string;
@@ -402,5 +464,12 @@ Return corrected VALID JSON matching the schema in the system message exactly. E
     }
   }
 
-  return finalizeCopy(parsed.data, input, analysis);
+  let copy = finalizeCopy(parsed.data, input, analysis);
+  if (headlineIsWeak(copy, input)) {
+    copy = await rescueHeadline(copy, input, {
+      apiKey: opts.apiKey,
+      model: opts.model,
+    });
+  }
+  return copy;
 }

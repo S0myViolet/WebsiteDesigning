@@ -184,6 +184,30 @@ function draftBanner(): string {
   return `<div class="draft-banner" role="note">${escapeHtml(DISCLAIMER)}</div>`;
 }
 
+/**
+ * The showcase list (signature menu / practice index / treatments / work).
+ * Starts from highlight_items and tops up from services so a thin AI response
+ * (1-2 highlights) never produces a sparse-looking hero section.
+ */
+function mergedHighlights(
+  copy: WebsiteCopyJson,
+  min: number,
+  max: number
+): { title: string; description: string }[] {
+  const items = [...(copy.highlight_items ?? [])];
+  if (items.length < min) {
+    const seen = new Set(items.map((i) => i.title.trim().toLowerCase()));
+    for (const s of copy.services) {
+      if (items.length >= min) break;
+      if (!seen.has(s.title.trim().toLowerCase())) {
+        items.push(s);
+        seen.add(s.title.trim().toLowerCase());
+      }
+    }
+  }
+  return items.slice(0, max);
+}
+
 function ctaButtons(
   links: Links,
   copy: WebsiteCopyJson,
@@ -641,7 +665,7 @@ function renderPremiumService(ctx: RenderContext, t: Tokens, links: Links): { cs
   const { business, copy, brief } = ctx;
   const hv = ctx.heroVariant ?? "a";
   const monogram = escapeHtml(business.name.trim().charAt(0).toUpperCase() || "•");
-  const signatures = (copy.highlight_items?.length ? copy.highlight_items : copy.services).slice(0, 4);
+  const signatures = mergedHighlights(copy, 3, 4);
   const today = todayLine(business);
 
   const css = `
@@ -794,7 +818,7 @@ function renderPremiumService(ctx: RenderContext, t: Tokens, links: Links): { cs
 function renderLocalPractical(ctx: RenderContext, t: Tokens, links: Links): { css: string; body: string } {
   const { business, copy, brief } = ctx;
   const hv = ctx.heroVariant ?? "a";
-  const jobs = (copy.highlight_items?.length ? copy.highlight_items : copy.services).slice(0, 4);
+  const jobs = mergedHighlights(copy, 3, 4);
 
   const css = `
   .phone-strip { background:var(--secondary); color:#fff; }
@@ -914,7 +938,7 @@ function renderLocalPractical(ctx: RenderContext, t: Tokens, links: Links): { cs
 function renderHospitality(ctx: RenderContext, t: Tokens, links: Links): { css: string; body: string } {
   const { business, copy, brief } = ctx;
   const hv = ctx.heroVariant ?? "a";
-  const menu = (copy.highlight_items?.length ? copy.highlight_items : copy.services).slice(0, 6);
+  const menu = mergedHighlights(copy, 4, 6);
   const today = todayLine(business);
 
   const css = `
@@ -1028,7 +1052,7 @@ function renderHospitality(ctx: RenderContext, t: Tokens, links: Links): { css: 
 function renderWellnessClinic(ctx: RenderContext, t: Tokens, links: Links): { css: string; body: string } {
   const { business, copy, brief } = ctx;
   const hv = ctx.heroVariant ?? "a";
-  const treatments = (copy.highlight_items?.length ? copy.highlight_items : copy.services).slice(0, 6);
+  const treatments = mergedHighlights(copy, 4, 6);
   const trust = (brief?.trust_signals?.length ? brief.trust_signals : copy.why_choose_us).slice(0, 4);
 
   const css = `
@@ -1136,7 +1160,7 @@ function renderWellnessClinic(ctx: RenderContext, t: Tokens, links: Links): { cs
 function renderCreativePortfolio(ctx: RenderContext, t: Tokens, links: Links): { css: string; body: string } {
   const { business, copy, brief } = ctx;
   const hv = ctx.heroVariant ?? "a";
-  const projects = (copy.highlight_items?.length ? copy.highlight_items : copy.services).slice(0, 4);
+  const projects = mergedHighlights(copy, 3, 4);
 
   const css = `
   .hero-crea { padding:${t.space + 28}px 0 ${t.space}px; }
@@ -1249,7 +1273,7 @@ function renderCreativePortfolio(ctx: RenderContext, t: Tokens, links: Links): {
 function renderPremiumProfessional(ctx: RenderContext, t: Tokens, links: Links): { css: string; body: string } {
   const { business, copy, brief } = ctx;
   const hv = ctx.heroVariant ?? "a";
-  const areas = (copy.highlight_items?.length ? copy.highlight_items : copy.services).slice(0, 5);
+  const areas = mergedHighlights(copy, 3, 5);
 
   const css = `
   .pro-nav { background:var(--secondary); }
