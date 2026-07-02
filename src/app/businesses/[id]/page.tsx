@@ -46,7 +46,7 @@ import {
   OPPORTUNITY_TIER_LABELS,
   opportunityTier,
 } from "@/lib/types";
-import { cn, normalizePhone } from "@/lib/utils";
+import { cn, normalizePhone, safeHttpUrl } from "@/lib/utils";
 
 const TIER_TEXT_CLASSES: Record<ReturnType<typeof opportunityTier>, string> = {
   "very-high": "text-emerald-600 dark:text-emerald-400",
@@ -279,9 +279,9 @@ export default function BusinessDetailPage() {
                 ? "Open website draft"
                 : "Generate website"}
           </Button>
-          {business.googleMapsUrl && (
+          {safeHttpUrl(business.googleMapsUrl) && (
             <a
-              href={business.googleMapsUrl}
+              href={safeHttpUrl(business.googleMapsUrl)!}
               target="_blank"
               rel="noreferrer"
               className={buttonVariants({ variant: "outline" })}
@@ -497,17 +497,22 @@ export default function BusinessDetailPage() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <WebsiteStatusBadge status={business.websiteStatus} />
-              {business.websiteUrl && (
-                <a
-                  href={business.websiteUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-start gap-1.5 break-all text-primary hover:underline"
-                >
-                  <ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />
-                  {business.websiteUrl}
-                </a>
-              )}
+              {business.websiteUrl &&
+                (safeHttpUrl(business.websiteUrl) ? (
+                  <a
+                    href={safeHttpUrl(business.websiteUrl)!}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-start gap-1.5 break-all text-primary hover:underline"
+                  >
+                    <ExternalLink className="mt-0.5 h-4 w-4 shrink-0" />
+                    {business.websiteUrl}
+                  </a>
+                ) : (
+                  <p className="break-all text-muted-foreground">
+                    {business.websiteUrl}
+                  </p>
+                ))}
               {verifyEvidence.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">

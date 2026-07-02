@@ -53,13 +53,20 @@ export async function saveSettings(partial: Partial<AppSettings>): Promise<AppSe
   return getSettings();
 }
 
-/** Settings safe to send to the browser (API keys masked). */
+/** Fixed placeholder returned instead of stored keys — no real characters. */
+export const KEY_MASK = "••••••••";
+
+/**
+ * Settings safe to send to the browser. API keys are replaced with a fixed
+ * placeholder (never any real characters); the UI drives its "configured"
+ * state from the has*Key booleans.
+ */
 export function maskSettings(settings: AppSettings): AppSettings & {
   hasGoogleKey: boolean;
   hasOpenaiKey: boolean;
   hasSearchKey: boolean;
 } {
-  const mask = (v: string) => (v ? `${v.slice(0, 4)}…${v.slice(-4)}` : "");
+  const mask = (v: string) => (v ? KEY_MASK : "");
   return {
     ...settings,
     googleMapsApiKey: mask(settings.googleMapsApiKey),

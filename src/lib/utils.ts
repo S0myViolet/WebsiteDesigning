@@ -12,6 +12,17 @@ export function toJsonField(value: unknown): string | null {
   return JSON.stringify(value);
 }
 
+/**
+ * Only allow http(s) URLs — anything else (javascript:, data:, relative
+ * garbage) returns null. Use before rendering any stored/external URL as an
+ * href or persisting one from an upstream API.
+ */
+export function safeHttpUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
+
 /** Normalize a phone number for search queries / WhatsApp links (digits and +). */
 export function normalizePhone(phone: string | null | undefined): string {
   if (!phone) return "";

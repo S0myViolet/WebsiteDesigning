@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import type { BusinessListItem } from "@/lib/types";
 import type { ApiError } from "@/lib/api-types";
-import { cn } from "@/lib/utils";
+import { cn, safeHttpUrl } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -197,12 +197,13 @@ export function BusinessTable({
         header: "Maps",
         cell: ({ row }) => {
           const b = row.original;
-          if (!b.googleMapsUrl) {
+          const mapsUrl = safeHttpUrl(b.googleMapsUrl);
+          if (!mapsUrl) {
             return <span className="text-muted-foreground">—</span>;
           }
           return (
             <a
-              href={b.googleMapsUrl}
+              href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Open ${b.name} on Google Maps`}

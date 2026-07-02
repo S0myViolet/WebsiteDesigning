@@ -23,6 +23,29 @@ const DEFAULT_COLUMNS: string[] = [
   "leadStatus",
 ];
 
+/**
+ * Every column id selectable in the settings UI (superset of the defaults;
+ * keep in sync with COLUMN_ACCESSORS below).
+ */
+export const EXPORTABLE_COLUMNS: string[] = [
+  "name",
+  "category",
+  "area",
+  "address",
+  "phone",
+  "rating",
+  "reviewCount",
+  "websiteUrl",
+  "websiteStatus",
+  "opportunityScore",
+  "googleMapsUrl",
+  "businessSummary",
+  "leadStatus",
+  "leadNotes",
+  "placeId",
+  "createdAt",
+];
+
 /** Known column ids mapped to value accessors; unknown ids are ignored. */
 const COLUMN_ACCESSORS: Record<string, ColumnAccessor | undefined> = {
   id: (row) => row.id,

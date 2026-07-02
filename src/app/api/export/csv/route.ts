@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { businessesToCsv } from "@/lib/csv";
 import {
+  applyWebsiteVisibilityDefault,
   BUSINESS_LIST_INCLUDE,
   buildBusinessOrderBy,
   buildBusinessWhere,
@@ -29,13 +30,16 @@ export async function GET(req: NextRequest) {
     }
 
     const { sortBy, sortDir, ...filters } = parsed.data;
+    const settings = await getSettings();
     const rows = await prisma.business.findMany({
-      where: buildBusinessWhere(filters),
+      where: applyWebsiteVisibilityDefault(
+        buildBusinessWhere(filters),
+        filters,
+        settings.includeUncertainWebsites
+      ),
       orderBy: buildBusinessOrderBy(sortBy, sortDir),
       include: BUSINESS_LIST_INCLUDE,
     });
-
-    const settings = await getSettings();
     const csv = businessesToCsv(rows.map(toBusinessListItem), settings.exportColumns);
 
     const date = new Date().toISOString().slice(0, 10);

@@ -16,9 +16,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 
+/**
+ * Only allow same-origin path redirects: must start with a single "/" (no
+ * "//host" protocol-relative form) and contain no scheme. Anything else —
+ * javascript:, data:, absolute URLs — falls back to "/".
+ */
+function safeRedirectPath(value: string | null): string {
+  if (!value) return "/";
+  if (!value.startsWith("/") || value.startsWith("//") || value.includes(":")) {
+    return "/";
+  }
+  return value;
+}
+
 function LoginForm() {
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") ?? "/";
+  const from = safeRedirectPath(searchParams.get("from"));
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");

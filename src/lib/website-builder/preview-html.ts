@@ -249,12 +249,10 @@ export function buildPreviewHtml(input: PreviewInput): string {
   const name = escapeHtml(business.name);
   const areaSuffix = business.area ? ` · ${escapeHtml(business.area)}` : "";
 
-  const ratingLine =
-    business.rating !== null
-      ? `<p class="rating"><span aria-hidden="true">★</span> Rated ${escapeHtml(
-          business.rating.toFixed(1)
-        )} from ${escapeHtml(business.reviewCount)} Google reviews</p>`
-      : "";
+  // Note: the Google rating/review count is deliberately NOT displayed on the
+  // generated site — republishing Google ratings on third-party sites
+  // conflicts with Maps content policies (see docs/COMPLIANCE.md). The
+  // dashboard (internal tool) shows them instead.
 
   const heroButtons = `
     <div class="btn-row">
@@ -368,7 +366,6 @@ export function buildPreviewHtml(input: PreviewInput): string {
       <p class="kicker">${escapeHtml(business.category)}${areaSuffix}</p>
       <h1>${escapeHtml(copy.headline || business.name)}</h1>
       <p class="sub">${escapeHtml(copy.subheadline)}</p>
-      ${ratingLine}
       ${heroButtons}
     </div>
   </header>

@@ -6,7 +6,7 @@ import { searchBusinessesInDubai } from "@/lib/google-places";
 import { isSocialOrAggregatorUrl } from "@/lib/website-detection";
 import { extractReviewKeywords } from "@/lib/keywords";
 import { computeOpportunityScore } from "@/lib/scoring";
-import { toJsonField } from "@/lib/utils";
+import { safeHttpUrl, toJsonField } from "@/lib/utils";
 import type { SearchParams, WebsiteStatus } from "@/lib/types";
 import type { SearchBusinessesResponse } from "@/lib/api-types";
 import {
@@ -110,9 +110,10 @@ export async function POST(req: NextRequest) {
         reviewCount: place.reviewCount,
         // Keep a URL found by verify-website: the fresh snapshot has none by
         // construction, and overwriting would silently lose the verification.
-        websiteUrl: place.websiteUrl ?? existing?.websiteUrl ?? null,
+        // safeHttpUrl: never persist a non-http(s) scheme as a clickable link.
+        websiteUrl: safeHttpUrl(place.websiteUrl) ?? existing?.websiteUrl ?? null,
         websiteStatus,
-        googleMapsUrl: place.googleMapsUrl,
+        googleMapsUrl: safeHttpUrl(place.googleMapsUrl),
         openingHours: toJsonField(place.openingHours),
         editorialSummary: place.editorialSummary,
         photosJson: toJsonField(place.photos),

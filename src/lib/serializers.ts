@@ -238,6 +238,25 @@ export function buildBusinessWhere(f: BusinessFilterValues): Prisma.BusinessWher
   return where;
 }
 
+/**
+ * Default opportunity-list visibility (spec section 2): when the user has not
+ * picked an explicit website-status filter, hide WEBSITE_FOUND businesses,
+ * and hide the uncertain states too unless the "include uncertain website
+ * cases" setting is on. Never applied to lead views (leadStatus filter set) —
+ * saved leads must stay visible regardless of website status.
+ */
+export function applyWebsiteVisibilityDefault(
+  where: Prisma.BusinessWhereInput,
+  f: BusinessFilterValues,
+  includeUncertain: boolean
+): Prisma.BusinessWhereInput {
+  if (f.websiteStatus || f.leadStatus) return where;
+  const hidden: string[] = includeUncertain
+    ? ["WEBSITE_FOUND"]
+    : ["WEBSITE_FOUND", "POSSIBLY_EXISTS", "NEEDS_MANUAL_REVIEW"];
+  return { ...where, websiteStatus: { notIn: hidden } };
+}
+
 export function buildBusinessOrderBy(
   sortBy: BusinessFilterValues["sortBy"],
   sortDir: BusinessFilterValues["sortDir"]

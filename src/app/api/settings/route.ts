@@ -54,7 +54,7 @@ export async function PUT(req: NextRequest) {
     // clear the stored override (getSettings then falls back to the env var).
     for (const field of API_KEY_FIELDS) {
       const value = partial[field];
-      if (value !== undefined && value.includes("…")) {
+      if (value !== undefined && (value.includes("•") || value.includes("…"))) {
         delete partial[field];
       }
     }

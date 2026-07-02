@@ -57,18 +57,23 @@ ${JSON.stringify(analysis, null, 2)}`;
 
 const stringArray = z.array(z.string()).catch([]);
 
+// Core content fields are STRICT (no .catch) so a bad response actually fails
+// validation and triggers the retry-with-feedback loop; only decorative
+// fields with code-level fallbacks are lenient.
 const copySchema = z.object({
   website_name: z.string().catch(""),
   headline: z.string().min(1),
-  subheadline: z.string().catch(""),
+  subheadline: z.string().min(1),
   cta_text: z.string().catch(""),
   about_section: z.string().min(1),
   services: z
-    .array(z.object({ title: z.string(), description: z.string().catch("") }))
-    .catch([]),
-  why_choose_us: stringArray,
-  testimonials: stringArray,
-  contact_section: z.string().catch(""),
+    .array(
+      z.object({ title: z.string().min(1), description: z.string().min(1) })
+    )
+    .min(2),
+  why_choose_us: z.array(z.string().min(1)).min(2),
+  testimonials: z.array(z.string().min(1)).min(1),
+  contact_section: z.string().min(1),
   seo_title: z.string().catch(""),
   seo_meta_description: z.string().catch(""),
   suggested_domain_names: stringArray,
@@ -108,14 +113,22 @@ function finalizeCopy(
   const clean = (values: string[]) =>
     values.map((v) => sanitizeCopy(v).trim()).filter((v) => v.length > 0);
 
-  const reviewTexts = new Set(
-    input.reviews
-      .map((r) => normalizeForComparison(r.text))
-      .filter((t) => t.length > 0)
-  );
-  const testimonials = clean(data.testimonials).filter(
-    (t) => !reviewTexts.has(normalizeForComparison(t))
-  );
+  const reviewTexts = input.reviews
+    .map((r) => normalizeForComparison(r.text))
+    .filter((t) => t.length > 0);
+  // Reject verbatim AND partially-verbatim quotes: a testimonial that appears
+  // inside a review (or contains one) is a copied passage, not a paraphrase.
+  const MIN_OVERLAP = 25;
+  const isVerbatim = (testimonial: string): boolean => {
+    const t = normalizeForComparison(testimonial);
+    return reviewTexts.some(
+      (review) =>
+        t === review ||
+        (t.length >= MIN_OVERLAP && review.includes(t)) ||
+        (review.length >= MIN_OVERLAP && t.includes(review))
+    );
+  };
+  const testimonials = clean(data.testimonials).filter((t) => !isVerbatim(t));
 
   const websiteName = sanitizeCopy(data.website_name).trim() || input.name;
   const ctaText =

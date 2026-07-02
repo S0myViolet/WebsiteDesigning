@@ -8,6 +8,7 @@ import {
   SESSION_COOKIE,
 } from "@/lib/auth";
 import { errorResponse } from "@/lib/serializers";
+import { clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,6 +36,21 @@ export async function POST(req: NextRequest) {
             "AUTH_SECRET must be set when ADMIN_EMAIL/ADMIN_PASSWORD are configured. Login is blocked until it is.",
         },
         { status: 500 }
+      );
+    }
+
+    // Throttle brute-force attempts: 5 tries per minute per client.
+    const limit = rateLimit(`login:${clientKey(req.headers)}`, {
+      max: 5,
+      windowMs: 60_000,
+    });
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Try again shortly." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limit.retryAfterSeconds) },
+        }
       );
     }
 

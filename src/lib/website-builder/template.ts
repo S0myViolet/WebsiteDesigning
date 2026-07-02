@@ -493,12 +493,8 @@ export function Hero() {
         <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-slate-600">
           {copy.subheadline}
         </p>
-        {business.rating !== null && (
-          <p className="mt-4 text-sm font-medium text-slate-600">
-            <span aria-hidden="true">{"\\u2605"}</span> Rated {business.rating.toFixed(1)} from{" "}
-            {business.reviewCount} Google reviews
-          </p>
-        )}
+        {/* Google rating/review count intentionally not republished here —
+            see the COMPLIANCE notes in the dashboard project. */}
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
           <a
             href={primaryHref}

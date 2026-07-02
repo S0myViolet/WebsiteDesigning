@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import type { BusinessListResponse } from "@/lib/api-types";
 import {
+  applyWebsiteVisibilityDefault,
   BUSINESS_LIST_INCLUDE,
   buildBusinessOrderBy,
   buildBusinessWhere,
@@ -11,6 +12,7 @@ import {
   queryToObject,
   toBusinessListItem,
 } from "@/lib/serializers";
+import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,7 +34,12 @@ export async function GET(req: NextRequest) {
     }
 
     const { page, pageSize, sortBy, sortDir, ...filters } = parsed.data;
-    const where = buildBusinessWhere(filters);
+    const settings = await getSettings();
+    const where = applyWebsiteVisibilityDefault(
+      buildBusinessWhere(filters),
+      filters,
+      settings.includeUncertainWebsites
+    );
     const orderBy = buildBusinessOrderBy(sortBy, sortDir);
 
     const [rows, total] = await Promise.all([

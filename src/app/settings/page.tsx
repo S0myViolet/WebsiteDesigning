@@ -26,6 +26,7 @@ import {
   WEBSITE_STYLE_OPTIONS,
 } from "@/lib/constants";
 import type { AppSettings } from "@/lib/types";
+import { EXPORTABLE_COLUMNS } from "@/lib/csv";
 
 interface MaskedSettings extends AppSettings {
   hasGoogleKey: boolean;
@@ -35,7 +36,7 @@ interface MaskedSettings extends AppSettings {
 
 const AREA_OPTIONS = DUBAI_AREAS.map((area) => area.name);
 const CATEGORY_OPTIONS = CATEGORIES.map((category) => category.label);
-const EXPORT_COLUMN_OPTIONS = DEFAULT_SETTINGS.exportColumns;
+const EXPORT_COLUMN_OPTIONS = EXPORTABLE_COLUMNS;
 
 async function readError(res: Response): Promise<string> {
   const data = (await res.json().catch(() => null)) as {
@@ -52,7 +53,9 @@ function sameSet(a: string[], b: string[]): boolean {
 
 /** True when the value is safe to send as a new API key (not blank/masked). */
 function isNewKey(value: string): boolean {
-  return value.trim() !== "" && !value.includes("…");
+  return (
+    value.trim() !== "" && !value.includes("…") && !value.includes("•")
+  );
 }
 
 export default function SettingsPage() {
@@ -188,10 +191,35 @@ export default function SettingsPage() {
     return payload;
   }
 
+  /** Surface invalid form values instead of silently dropping them. */
+  function validateForm(): string | null {
+    const parsedMinReviews = Number.parseInt(minReviews, 10);
+    if (!Number.isFinite(parsedMinReviews) || parsedMinReviews < 0) {
+      return "Minimum reviews must be a whole number of 0 or more.";
+    }
+    const parsedMinRating = Number.parseFloat(minRating);
+    if (
+      !Number.isFinite(parsedMinRating) ||
+      parsedMinRating < 0 ||
+      parsedMinRating > 5
+    ) {
+      return "Minimum rating must be a number between 0 and 5.";
+    }
+    if (exportCols.length === 0) {
+      return "Select at least one CSV export column.";
+    }
+    return null;
+  }
+
   async function handleSave() {
     if (!snapshot) return;
     setSaveMessage(null);
     setSaveError(null);
+    const validationError = validateForm();
+    if (validationError) {
+      setSaveError(validationError);
+      return;
+    }
     const payload = buildPayload(snapshot);
     if (Object.keys(payload).length === 0) {
       setSaveMessage("No changes to save.");

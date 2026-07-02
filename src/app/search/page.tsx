@@ -62,6 +62,47 @@ export default function SearchPage() {
   const [includeChains, setIncludeChains] = React.useState(false);
   const [maxPagesPerArea, setMaxPagesPerArea] = React.useState("1");
 
+  // Initialize the form from the saved discovery defaults (settings page).
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/settings", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const s = (await res.json()) as {
+          defaultAreas?: string[];
+          defaultCategories?: string[];
+          minReviews?: number;
+          minRating?: number;
+          includeChains?: boolean;
+        };
+        if (cancelled) return;
+        if (Array.isArray(s.defaultAreas) && s.defaultAreas.length > 0) {
+          setAreas(s.defaultAreas);
+        }
+        if (
+          Array.isArray(s.defaultCategories) &&
+          s.defaultCategories.length > 0
+        ) {
+          setCategory(s.defaultCategories[0]);
+        }
+        if (typeof s.minReviews === "number") {
+          setMinReviews(String(s.minReviews));
+        }
+        if (typeof s.minRating === "number") setMinRating(String(s.minRating));
+        if (typeof s.includeChains === "boolean") {
+          setIncludeChains(s.includeChains);
+        }
+      } catch {
+        // Defaults stay as the hardcoded fallbacks when settings are
+        // unavailable; the user can still fill the form manually.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<SearchBusinessesResponse | null>(

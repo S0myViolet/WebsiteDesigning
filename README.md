@@ -168,7 +168,7 @@ All error responses are JSON `{ "error": string }` with an appropriate status co
 | POST | `/api/businesses/[id]/update-status` | `{status: "NEW"\|"SAVED"\|"CONTACTED"\|"REJECTED", notes?}` | `{lead: LeadStatusDto}` — sets `contactedAt` when transitioning to `CONTACTED` |
 | GET | `/api/export/csv` | same filters as `/api/businesses`, no paging | `text/csv` attachment `dubai-leads-<yyyy-mm-dd>.csv` |
 | GET | `/api/settings` | — | Masked `AppSettings` (API keys shown as `abcd…wxyz`) |
-| PUT | `/api/settings` | `Partial<AppSettings>` | Masked settings. Masked/empty API-key values in the body are ignored so saving the form never wipes real keys |
+| PUT | `/api/settings` | `Partial<AppSettings>` | Masked settings. Masked API-key values (placeholder bullets) are ignored so a round-tripped form never wipes real keys; an explicit empty string clears the stored key override (env fallback applies) |
 
 ---
 
@@ -215,8 +215,8 @@ All error responses are JSON `{ "error": string }` with an appropriate status co
    Open http://localhost:3000.
 
 6. **Run your first search**
-   1. On the dashboard, pick a category (e.g. *Salons*) and one or more areas (e.g. *Dubai Marina*, *Jumeirah*), adjust min reviews/rating if you like, and click **Search**. The run summary shows how many places were found, qualified, saved, and why others were skipped.
-   2. Open a business from the leads table to see its profile, review sample, keywords, and score breakdown.
+   1. Go to the **Search** page (left sidebar), pick a category (e.g. *Salons*) and one or more areas (e.g. *Dubai Marina*, *Jumeirah*), adjust min reviews/rating if you like, and click **Search**. The form is pre-filled from your saved defaults on the Settings page. The run summary shows how many places were found, qualified, saved, and why others were skipped.
+   2. Open a business from the results (or the **Businesses** table) to see its profile, review sample, keywords, and score breakdown.
    3. Click **Analyze** to run the AI review analysis (summary, services, praise/complaints, SEO keywords, positioning).
    4. Click **Generate website** to produce the draft copy and site.
    5. Click **Preview** to view the generated single-page draft in the browser.
@@ -303,7 +303,7 @@ This tool uses **official Google APIs only — no scraping**:
 Every AI call that produces customer-facing text embeds strict grounding rules (`src/lib/ai/copy-rules.ts`), and a sanitizer runs over the output:
 
 - **Grounded copy only**: everything is based on the provided reviews, editorial summary, category, and location. No invented prices, staff names, awards, certifications, licenses, or years in business.
-- **Banned superlatives**: phrases like "number one in Dubai", "award-winning", "certified experts", "best in the UAE", "guaranteed results", "government approved" are prohibited in prompts *and* stripped/replaced by a post-generation sanitizer unless they literally appear in the source data.
+- **Banned superlatives**: phrases like "number one in Dubai", "award-winning", "certified experts", "best in the UAE", "guaranteed results", "government approved" are prohibited in prompts, and a post-generation sanitizer unconditionally replaces any that slip through with neutral wording ("well-known locally", "experienced team", "trusted by customers").
 - **Paraphrased testimonials**: recurring review themes are summarized in the site's own words — full review text is never quoted verbatim and reviewer names are never used on generated sites.
 - **Draft labeling**: every preview and generated site is labeled as a draft/demo. Nothing produced here should be published or presented as a business's official website without the owner's approval.
 

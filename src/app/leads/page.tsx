@@ -50,16 +50,21 @@ async function readError(res: Response): Promise<string> {
   return data?.error || `Request failed (${res.status})`;
 }
 
-async function fetchByStatus(
-  status: LeadStatusValue
-): Promise<BusinessListItem[]> {
-  const url = `/api/businesses?leadStatus=${status}&sortBy=score&sortDir=desc&pageSize=100`;
+const PAGE_SIZE = 100;
+
+interface StatusPage {
+  businesses: BusinessListItem[];
+  total: number;
+}
+
+async function fetchByStatus(status: LeadStatusValue): Promise<StatusPage> {
+  const url = `/api/businesses?leadStatus=${status}&sortBy=score&sortDir=desc&pageSize=${PAGE_SIZE}`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(await readError(res));
   }
   const data = (await res.json()) as BusinessListResponse;
-  return data.businesses;
+  return { businesses: data.businesses, total: data.total };
 }
 
 export default function LeadsPage() {
@@ -70,31 +75,46 @@ export default function LeadsPage() {
   const [rowBusyId, setRowBusyId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [notesDraft, setNotesDraft] = React.useState("");
+  const [truncatedNote, setTruncatedNote] = React.useState<string | null>(null);
+  // Monotonic request id: only the newest load() is allowed to apply its
+  // result, so a slow response for an old tab can't overwrite a newer one.
+  const loadSeq = React.useRef(0);
 
   const load = React.useCallback(async (activeTab: TabValue) => {
+    const seq = ++loadSeq.current;
     setError(null);
     try {
+      let merged: BusinessListItem[];
+      let total: number;
       if (activeTab === "ALL") {
         const results = await Promise.all(
           LEAD_STATUSES.map((status) => fetchByStatus(status))
         );
         const byId = new Map<string, BusinessListItem>();
-        for (const list of results) {
-          for (const item of list) byId.set(item.id, item);
+        for (const page of results) {
+          for (const item of page.businesses) byId.set(item.id, item);
         }
-        const merged = Array.from(byId.values()).sort(
+        merged = Array.from(byId.values()).sort(
           (a, b) => (b.opportunityScore ?? -1) - (a.opportunityScore ?? -1)
         );
-        setItems(merged);
+        total = results.reduce((sum, page) => sum + page.total, 0);
       } else {
-        setItems(await fetchByStatus(activeTab));
+        const page = await fetchByStatus(activeTab);
+        merged = page.businesses;
+        total = page.total;
       }
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not load leads."
+      if (seq !== loadSeq.current) return; // a newer load superseded this one
+      setItems(merged);
+      setTruncatedNote(
+        total > merged.length
+          ? `Showing the top ${merged.length} of ${total} leads by opportunity score.`
+          : null
       );
+    } catch (err) {
+      if (seq !== loadSeq.current) return;
+      setError(err instanceof Error ? err.message : "Could not load leads.");
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, []);
 
@@ -181,6 +201,10 @@ export default function LeadsPage() {
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           {error}
         </p>
+      )}
+
+      {truncatedNote && !loading && (
+        <p className="text-sm text-muted-foreground">{truncatedNote}</p>
       )}
 
       {loading ? (

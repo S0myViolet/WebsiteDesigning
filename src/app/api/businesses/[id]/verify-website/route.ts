@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { detectWebsiteStatus } from "@/lib/website-detection";
 import { computeOpportunityScore } from "@/lib/scoring";
-import { toJsonField } from "@/lib/utils";
+import { safeHttpUrl, toJsonField } from "@/lib/utils";
 import { parseJsonField } from "@/lib/types";
 import type { VerifyWebsiteResponse } from "@/lib/api-types";
 import { errorResponse } from "@/lib/serializers";
@@ -54,11 +54,14 @@ export async function POST(
       photosCount: business.photosCount,
     });
 
+    // Only persist http(s) URLs — never let a non-web scheme from an
+    // upstream search result become a clickable stored link.
+    const foundUrl = safeHttpUrl(result.foundUrl);
     await prisma.business.update({
       where: { id: business.id },
       data: {
         websiteStatus: result.status,
-        ...(result.foundUrl ? { websiteUrl: result.foundUrl } : {}),
+        ...(foundUrl ? { websiteUrl: foundUrl } : {}),
         opportunityScore: score.total,
         scoreBreakdown: toJsonField(score),
       },
