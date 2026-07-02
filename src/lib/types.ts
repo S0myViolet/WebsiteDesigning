@@ -168,17 +168,62 @@ export const LAYOUT_TYPE_LABELS: Record<LayoutType, string> = {
 
 /**
  * Creative direction: the design concept invented for one business before
- * any copy or layout work (design-personality spec).
+ * any copy or layout work — pitched like an agency creative director.
  */
 export interface CreativeDirectionJson {
   creative_concept: string;
-  visual_mood: string;
-  layout_personality: string;
-  signature_design_element: string;
-  business_specific_feature: string;
-  premium_detail: string;
-  interaction_idea: string;
-  why_this_fits_the_business: string;
+  brand_feel: string;
+  business_character: string;
+  visual_story: string;
+  layout_attitude: string;
+  signature_motif: string;
+  section_rhythm: string;
+  cta_style: string;
+  image_direction: string;
+  why_this_will_not_feel_generic: string;
+}
+
+/** Curated font pairings the visual-style step selects from. */
+export type FontPairingKey =
+  | "editorial-luxury"
+  | "classic-authority"
+  | "warm-hospitality"
+  | "bold-practical"
+  | "calm-humanist"
+  | "modern-creative"
+  | "friendly-compact";
+
+export const FONT_PAIRING_KEYS: FontPairingKey[] = [
+  "editorial-luxury",
+  "classic-authority",
+  "warm-hospitality",
+  "bold-practical",
+  "calm-humanist",
+  "modern-creative",
+  "friendly-compact",
+];
+
+/** Deeper per-site design system generated with the creative direction. */
+export interface DesignSystemJson {
+  typography_system: {
+    /** One of FONT_PAIRING_KEYS */
+    font_pairing: string;
+    headline_style: string;
+    subheadline_style: string;
+    body_style: string;
+    microcopy_style: string;
+  };
+  spacing_system: string;
+  corner_radius_style: string;
+  button_style: string;
+  surface_style: string;
+  border_style: string;
+  /** "airy" | "balanced" | "dense" guidance */
+  visual_density: string;
+  grid_logic: string;
+  /** "hairline" | "motif" | "angled" | "none" guidance */
+  section_divider_style: string;
+  motion_style: string;
 }
 
 /** Business-specific feature-section types every layout knows how to render. */

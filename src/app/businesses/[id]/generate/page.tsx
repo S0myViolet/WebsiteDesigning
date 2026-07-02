@@ -31,6 +31,7 @@ import { QualityScoreBadge } from "@/components/generate/quality-badge";
 import {
   CreativeDirectionCard,
   DesignBriefCard,
+  DesignSystemCard,
   QualityReviewCard,
   SeoCard,
   SourcesCard,
@@ -477,6 +478,7 @@ export default function GenerateWebsitePage() {
           <UniquenessCard notes={website.uniquenessNotes} />
           <DesignBriefCard brief={website.designBrief} />
           <VisualStyleCard style={website.visualStyle} />
+          <DesignSystemCard system={website.designSystem} />
           <SourcesCard
             research={business.research}
             brief={website.designBrief}

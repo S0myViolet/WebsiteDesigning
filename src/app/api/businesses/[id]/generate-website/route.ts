@@ -37,6 +37,7 @@ import {
   parseJsonField,
   type AnalysisJson,
   type CreativeDirectionJson,
+  type DesignSystemJson,
   type DesignBriefJson,
   type LayoutType,
   type QualityReportJson,
@@ -160,11 +161,15 @@ export async function POST(
       });
     }
 
-    // ---- Steps 4+7: creative direction + design brief + visual style ------
+    // ---- Steps 4+7: creative direction + design system + brief + style ----
     // (all reused in copy mode)
     const stored = business.website;
     let direction = parseJsonField<CreativeDirectionJson | null>(
       stored?.creativeDirection ?? null,
+      null
+    );
+    let designSystem = parseJsonField<DesignSystemJson | null>(
+      stored?.designSystem ?? null,
       null
     );
     let brief = parseJsonField<DesignBriefJson | null>(
@@ -175,9 +180,10 @@ export async function POST(
       stored?.visualStyle ?? null,
       null
     );
-    if (mode !== "copy" || !brief || !style || !direction) {
+    if (mode !== "copy" || !brief || !style || !direction || !designSystem) {
       const generated = await generateDesignBrief(input, analysisJson, research, ai);
       direction = generated.direction;
+      designSystem = generated.system;
       brief = generated.brief;
       style = generated.style;
     }
@@ -287,6 +293,7 @@ export async function POST(
       copy,
       brief,
       style,
+      system: designSystem,
       layout,
       heroVariant,
     });
@@ -295,6 +302,7 @@ export async function POST(
       copy,
       brief,
       style,
+      system: designSystem,
       layout,
     });
 
@@ -323,6 +331,7 @@ export async function POST(
       qualityScore: report.quality_score,
       qualityReport: JSON.stringify(report),
       creativeDirection: JSON.stringify(direction),
+      designSystem: JSON.stringify(designSystem),
       uniquenessNotes: JSON.stringify(uniqueness),
     };
 

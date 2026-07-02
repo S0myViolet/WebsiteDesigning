@@ -15,7 +15,7 @@ import { chatJson } from "@/lib/ai/openai-client";
 import { BANNED_PHRASES, findGenericPhrases } from "@/lib/ai/copy-rules";
 import type { BusinessAnalysisInput } from "@/lib/ai/analysis";
 
-export const QUALITY_THRESHOLD = 85;
+export const QUALITY_THRESHOLD = 90;
 
 function copyToPlainText(copy: WebsiteCopyJson): string {
   return [
@@ -72,7 +72,9 @@ Score the draft 0-100 against this checklist:
 - Testimonials are paraphrased themes, never verbatim quotes or reviewer names.
 - Nothing implies this is the official website of the business.
 
-Scoring guide: 92+ = would impress a real owner as-is; 85-91 = client-ready with minor polish; 70-84 = competent but still reads templated in places; 50-69 = noticeably generic or off-tone; below 50 = filler or unsupported claims. Most first drafts should land 70-88 — reserve 92+ for genuinely sharp work.
+Rate across TEN dimensions and weigh them equally: originality, premium feel, business specificity, typography-support (does the copy give the type system something to work with: short punchy heads, editorial lines), layout sophistication (do the sections give the layout variety: feature modules, not just lists), visual rhythm (does section content alternate in kind), CTA quality (right action + microcopy), mobile quality (short scannable blocks), trust-building (grounded reassurance), non-generic feel.
+
+Scoring guide: 94+ = agency-grade, would impress a real owner as-is; 90-93 = client-ready; 80-89 = good but still reads assembled in places — FAIL; 60-79 = templated; below 60 = filler or unsupported claims. Be harsh: "merely good enough" must fail. Reserve 94+ for genuinely sharp work.
 
 design_notes: 2-4 short observations about what makes (or would make) this feel custom-designed rather than generated.
 improvement_instructions: a numbered list of concrete rewrite instructions fixing every issue found (empty string only when the score is 92+).

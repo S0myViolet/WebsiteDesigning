@@ -136,6 +136,8 @@ model GeneratedWebsite {
   qualityReport        String?
   // JSON-encoded CreativeDirectionJson (the design concept for this business)
   creativeDirection    String?
+  // JSON-encoded DesignSystemJson (typography/spacing/surface system)
+  designSystem         String?
   // JSON-encoded UniquenessNotes (structural-signature comparison result)
   uniquenessNotes      String?
   createdAt            DateTime @default(now())

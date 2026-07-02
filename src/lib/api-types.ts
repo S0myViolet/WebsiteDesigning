@@ -3,6 +3,7 @@ import type {
   AnalysisJson,
   BusinessListItem,
   CreativeDirectionJson,
+  DesignSystemJson,
   DesignBriefJson,
   LayoutType,
   LeadStatusValue,
@@ -70,6 +71,8 @@ export interface WebsiteDto {
   qualityReport: QualityReportJson | null;
   /** The design concept invented for this business */
   creativeDirection: CreativeDirectionJson | null;
+  /** Deeper design system (typography pairing, density, dividers, motion) */
+  designSystem: DesignSystemJson | null;
   /** Structural-uniqueness comparison against other generated sites */
   uniquenessNotes: UniquenessNotes | null;
   updatedAt: string;

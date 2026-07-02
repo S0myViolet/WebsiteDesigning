@@ -22,6 +22,7 @@ import {
   type AnalysisJson,
   type BusinessListItem,
   type CreativeDirectionJson,
+  type DesignSystemJson,
   type DesignBriefJson,
   type LayoutType,
   type LeadStatusValue,
@@ -143,6 +144,7 @@ export function toWebsiteDto(w: GeneratedWebsite): WebsiteDto {
       w.creativeDirection,
       null
     ),
+    designSystem: parseJsonField<DesignSystemJson | null>(w.designSystem, null),
     uniquenessNotes: parseJsonField<UniquenessNotes | null>(w.uniquenessNotes, null),
     updatedAt: w.updatedAt.toISOString(),
   };

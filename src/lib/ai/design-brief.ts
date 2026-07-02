@@ -8,6 +8,7 @@ import type {
   ConfidenceNote,
   CreativeDirectionJson,
   DesignBriefJson,
+  DesignSystemJson,
   ResearchResult,
   VisualStyleJson,
 } from "@/lib/types";
@@ -41,20 +42,36 @@ DESIGN THINKING RULES:
 - recommended_layout_type MUST be exactly one of: ${LAYOUT_TYPES.join(", ")}.
   premium-service = salons, spas, beauty, luxury services (editorial luxury). local-practical = garages, cleaning, tailors, repair, small trades (bold local service). hospitality = restaurants, cafes, food (warm hospitality). wellness-clinic = clinics, dental, gyms, nurseries, health (calm clinical). creative-portfolio = interior design, events, studios (portfolio showcase). premium-professional = law firms, real estate, consultants, corporate services (authority, structured, minimal). simple-landing = thin data, phone-first businesses (compact conversion).
 
-CREATIVE DIRECTION — invent ONE distinctive design concept for THIS business, the way an agency creative director would pitch it. It must go beyond "clean and modern": name a concrete visual idea (e.g. "a treatment-menu editorial like a boutique price card", "a diagnostic-report aesthetic with checklist rules", "a menu-board rhythm with dotted leaders and warm paper tones", "a case-file layout with numbered practice areas"). The signature_design_element is a SPECIFIC visual device the site is built around; business_specific_feature is a section idea unique to this trade (treatment menu preview, diagnostic checklist, first-visit reassurance, perfect-for occasions, process timeline, service-area map note); premium_detail is a small touch that signals professional design (microcopy under the CTA, numbered section kickers, a floating hours card, a review-themes strip); interaction_idea is a subtle behavior (sticky mobile call bar, hover-lift on service rows, gentle reveal on scroll). No two businesses should get the same concept wording.
+CREATIVE DIRECTION — pitch ONE distinctive design concept for THIS business the way an agency creative director sells a homepage concept. It must go beyond "clean and modern": commit to a concrete visual idea (e.g. "a boutique treatment card set in warm editorial serif, like a printed salon menu", "a workshop job-sheet aesthetic — rules, indexes and stamped confidence", "a corner menu-board with dotted leaders, paper warmth and late-night ease", "a counsel letterhead: framed, restrained, roman-numbered practice index"). visual_story = the feeling a first-time visitor should get in the first five seconds and how the page earns it; layout_attitude = how the composition behaves (editorial asymmetry, operational density, framed formality, gallery looseness); signature_motif = ONE repeatable graphic device that stitches the page together (a numbering system, a dotted leader, a hairline frame, an oversized ghost numeral, a small ornament); section_rhythm = how sections alternate (light/tinted/dark, dense/airy, full-bleed/inset); cta_style = the personality of the conversion moments (quiet confidence vs. bold direct-response) and their microcopy attitude; why_this_will_not_feel_generic = name exactly what separates this from a template. No two businesses should get the same concept wording.
+
+DESIGN SYSTEM — translate the direction into concrete system decisions. typography_system.font_pairing MUST be exactly one of: editorial-luxury (Fraunces serif display — salons/spas/beauty), classic-authority (Source Serif — law/real estate/corporate), warm-hospitality (Lora — cafes/restaurants), bold-practical (Archivo heavy — garages/trades), calm-humanist (Manrope — clinics/wellness), modern-creative (Space Grotesk — studios/creative), friendly-compact (Plus Jakarta — simple landings). visual_density MUST contain one of: airy, balanced, dense. section_divider_style MUST contain one of: hairline, motif, angled, none. corner_radius_style should include sharp, soft, or pill. Every other field is a one-line direction a front-end engineer can implement.
 - content_confidence_notes: classify every important claim you expect the website to make. confidence values: profile (from the Google Business profile), reviews (from customer reviews), external (from a listed public source — include its name in "source"), inferred (from category+location), unknown (must not be claimed). Be honest; "unknown" entries are used to BLOCK claims.
 
 Respond with VALID JSON ONLY matching EXACTLY:
 {
   "creative_direction": {
-    "creative_concept": string — the one-line design concept pitch,
-    "visual_mood": string,
-    "layout_personality": string,
-    "signature_design_element": string,
-    "business_specific_feature": string,
-    "premium_detail": string,
-    "interaction_idea": string,
-    "why_this_fits_the_business": string
+    "creative_concept": string — the one-line concept pitch,
+    "brand_feel": string,
+    "business_character": string,
+    "visual_story": string,
+    "layout_attitude": string,
+    "signature_motif": string,
+    "section_rhythm": string,
+    "cta_style": string,
+    "image_direction": string,
+    "why_this_will_not_feel_generic": string
+  },
+  "design_system": {
+    "typography_system": { "font_pairing": string — one of the seven keys, "headline_style": string, "subheadline_style": string, "body_style": string, "microcopy_style": string },
+    "spacing_system": string,
+    "corner_radius_style": string,
+    "button_style": string,
+    "surface_style": string,
+    "border_style": string,
+    "visual_density": string,
+    "grid_logic": string,
+    "section_divider_style": string,
+    "motion_style": string
   },
   "design_brief": {
     "business_identity": string — 1-2 sentences: who this business is, grounded in evidence,
@@ -157,17 +174,39 @@ const styleSchema = z.object({
 
 const creativeDirectionSchema = z.object({
   creative_concept: z.string().min(1),
-  visual_mood: z.string().catch(""),
-  layout_personality: z.string().catch(""),
-  signature_design_element: z.string().min(1),
-  business_specific_feature: z.string().min(1),
-  premium_detail: z.string().catch(""),
-  interaction_idea: z.string().catch(""),
-  why_this_fits_the_business: z.string().catch(""),
+  brand_feel: z.string().catch(""),
+  business_character: z.string().catch(""),
+  visual_story: z.string().catch(""),
+  layout_attitude: z.string().catch(""),
+  signature_motif: z.string().min(1),
+  section_rhythm: z.string().catch(""),
+  cta_style: z.string().catch(""),
+  image_direction: z.string().catch(""),
+  why_this_will_not_feel_generic: z.string().catch(""),
+});
+
+const designSystemSchema = z.object({
+  typography_system: z.object({
+    font_pairing: z.string().catch(""),
+    headline_style: z.string().catch(""),
+    subheadline_style: z.string().catch(""),
+    body_style: z.string().catch(""),
+    microcopy_style: z.string().catch(""),
+  }),
+  spacing_system: z.string().catch(""),
+  corner_radius_style: z.string().catch("soft"),
+  button_style: z.string().catch(""),
+  surface_style: z.string().catch(""),
+  border_style: z.string().catch(""),
+  visual_density: z.string().catch("balanced"),
+  grid_logic: z.string().catch(""),
+  section_divider_style: z.string().catch("hairline"),
+  motion_style: z.string().catch("subtle"),
 });
 
 const responseSchema = z.object({
   creative_direction: creativeDirectionSchema,
+  design_system: designSystemSchema,
   design_brief: briefSchema,
   visual_style: styleSchema,
 });
@@ -240,22 +279,47 @@ function cleanStrings(values: string[]): string[] {
 
 function finalize(data: z.infer<typeof responseSchema>): {
   direction: CreativeDirectionJson;
+  system: DesignSystemJson;
   brief: DesignBriefJson;
   style: VisualStyleJson;
 } {
   const b = data.design_brief;
   const s = data.visual_style;
   const c = data.creative_direction;
+  const ds = data.design_system;
 
   const direction: CreativeDirectionJson = {
     creative_concept: sanitizeCopy(c.creative_concept).trim(),
-    visual_mood: sanitizeCopy(c.visual_mood).trim(),
-    layout_personality: sanitizeCopy(c.layout_personality).trim(),
-    signature_design_element: sanitizeCopy(c.signature_design_element).trim(),
-    business_specific_feature: sanitizeCopy(c.business_specific_feature).trim(),
-    premium_detail: sanitizeCopy(c.premium_detail).trim(),
-    interaction_idea: sanitizeCopy(c.interaction_idea).trim(),
-    why_this_fits_the_business: sanitizeCopy(c.why_this_fits_the_business).trim(),
+    brand_feel: sanitizeCopy(c.brand_feel).trim(),
+    business_character: sanitizeCopy(c.business_character).trim(),
+    visual_story: sanitizeCopy(c.visual_story).trim(),
+    layout_attitude: sanitizeCopy(c.layout_attitude).trim(),
+    signature_motif: sanitizeCopy(c.signature_motif).trim(),
+    section_rhythm: sanitizeCopy(c.section_rhythm).trim(),
+    cta_style: sanitizeCopy(c.cta_style).trim(),
+    image_direction: sanitizeCopy(c.image_direction).trim(),
+    why_this_will_not_feel_generic: sanitizeCopy(
+      c.why_this_will_not_feel_generic
+    ).trim(),
+  };
+
+  const system: DesignSystemJson = {
+    typography_system: {
+      font_pairing: ds.typography_system.font_pairing.trim(),
+      headline_style: sanitizeCopy(ds.typography_system.headline_style).trim(),
+      subheadline_style: sanitizeCopy(ds.typography_system.subheadline_style).trim(),
+      body_style: sanitizeCopy(ds.typography_system.body_style).trim(),
+      microcopy_style: sanitizeCopy(ds.typography_system.microcopy_style).trim(),
+    },
+    spacing_system: sanitizeCopy(ds.spacing_system).trim(),
+    corner_radius_style: sanitizeCopy(ds.corner_radius_style).trim(),
+    button_style: sanitizeCopy(ds.button_style).trim(),
+    surface_style: sanitizeCopy(ds.surface_style).trim(),
+    border_style: sanitizeCopy(ds.border_style).trim(),
+    visual_density: sanitizeCopy(ds.visual_density).trim(),
+    grid_logic: sanitizeCopy(ds.grid_logic).trim(),
+    section_divider_style: sanitizeCopy(ds.section_divider_style).trim(),
+    motion_style: sanitizeCopy(ds.motion_style).trim(),
   };
 
   const notes: ConfidenceNote[] = b.content_confidence_notes.map((n) => ({
@@ -308,7 +372,7 @@ function finalize(data: z.infer<typeof responseSchema>): {
     overall_feel: sanitizeCopy(s.overall_feel).trim(),
   };
 
-  return { direction, brief, style };
+  return { direction, system, brief, style };
 }
 
 /**
@@ -322,6 +386,7 @@ export async function generateDesignBrief(
   opts: { apiKey: string; model: string }
 ): Promise<{
   direction: CreativeDirectionJson;
+  system: DesignSystemJson;
   brief: DesignBriefJson;
   style: VisualStyleJson;
 }> {

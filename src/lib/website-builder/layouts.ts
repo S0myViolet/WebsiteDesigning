@@ -1,18 +1,24 @@
 // The website renderer: seven structurally different layout variants, each
-// with two hero treatments (A/B) and business-specific feature sections,
-// driven by the per-business visual style. Output is a COMPLETE
-// self-contained HTML document (all CSS inline, one tiny static reveal
-// script, no CDN/network dependencies) with a permanent draft disclaimer.
-// Every interpolated string is escaped.
+// with two hero treatments (A/B), business-specific feature sections, and a
+// per-business design system (curated Google-Fonts pairing with system
+// fallbacks, density, dividers, motion). Output is a complete HTML document
+// with all CSS inline and one tiny static reveal script; the only network
+// request is the optional font stylesheet (font-display swap, graceful
+// fallback offline). Every interpolated string is escaped.
 
 import type {
   DesignBriefJson,
+  DesignSystemJson,
   FeatureSection,
   LayoutType,
   VisualStyleJson,
   WebsiteCopyJson,
 } from "@/lib/types";
 import { normalizePhone, whatsappLink } from "@/lib/utils";
+import {
+  resolveFontPairing,
+  type FontPairing,
+} from "@/lib/website-builder/fonts";
 import type { HeroVariant } from "@/lib/website-builder/uniqueness";
 
 export interface PreviewBusiness {
@@ -32,12 +38,17 @@ export interface RenderContext {
   copy: WebsiteCopyJson;
   brief: DesignBriefJson | null;
   style: VisualStyleJson | null;
+  /** Deeper design system (typography pairing, density, dividers, motion) */
+  system?: DesignSystemJson | null;
   layout: LayoutType;
   heroVariant?: HeroVariant;
 }
 
+const NOTE_SHORT = "Concept draft";
+const NOTE_LONG =
+  "Design concept generated from the public Google profile — not the live website";
 const DISCLAIMER =
-  "DRAFT WEBSITE CONCEPT — generated from public Google Maps data; not the official website of this business";
+  "This is a website concept draft prepared from publicly available Google Maps profile data. It is not the official website of this business and is not published on its behalf.";
 
 // ---------------------------------------------------------------------------
 // Escaping & sanitising
@@ -87,18 +98,41 @@ interface Tokens {
   muted: string;
   border: string;
   headingFont: string;
+  headingWeight: number;
+  headingTracking: string;
   bodyFont: string;
   radius: string;
   /** vertical section padding in px */
   space: number;
+  /** divider treatment between sections */
+  divider: "hairline" | "motif" | "angled" | "none";
+  /** motif glyph used by dividers/ornaments */
+  motifGlyph: string;
+  /** reveal-on-scroll animations enabled */
+  motion: boolean;
+  font: FontPairing;
 }
 
-const SANS_STACK =
-  'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-const SERIF_STACK =
-  'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
+const SERIF_STACK = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
 
-function deriveTokens(style: VisualStyleJson | null, layout: LayoutType): Tokens {
+const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
+
+/** Motif glyphs per layout — small, restrained ornaments. */
+const LAYOUT_MOTIFS: Record<LayoutType, string> = {
+  "premium-service": "✳",
+  "local-practical": "▸",
+  hospitality: "✦",
+  "wellness-clinic": "○",
+  "creative-portfolio": "—",
+  "premium-professional": "§",
+  "simple-landing": "·",
+};
+
+function deriveTokens(
+  style: VisualStyleJson | null,
+  system: DesignSystemJson | null | undefined,
+  layout: LayoutType
+): Tokens {
   const fallbacks: Record<LayoutType, Partial<Tokens>> = {
     "premium-service": { primary: "#8a6d4b", secondary: "#2b2320", accent: "#c9a36a", background: "#faf7f2", surface: "#ffffff", text: "#28211c" },
     "local-practical": { primary: "#b45309", secondary: "#1f2937", accent: "#f59e0b", background: "#f8fafc", surface: "#ffffff", text: "#111827" },
@@ -111,21 +145,35 @@ function deriveTokens(style: VisualStyleJson | null, layout: LayoutType): Tokens
   const fb = fallbacks[layout];
   const p = style?.color_palette;
 
-  const headingIsSerif = style
-    ? /serif/i.test(style.typography.heading_style) && !/sans/i.test(style.typography.heading_style)
-    : layout === "premium-service" ||
-      layout === "hospitality" ||
-      layout === "premium-professional";
+  const font = resolveFontPairing(
+    system?.typography_system.font_pairing,
+    layout
+  );
 
-  const buttonStyle = style?.button_style ?? "";
-  const radius = /pill/i.test(buttonStyle)
+  const radiusSource = `${system?.corner_radius_style ?? ""} ${style?.button_style ?? ""}`;
+  const radius = /pill/i.test(radiusSource)
     ? "999px"
-    : /sharp|square/i.test(buttonStyle)
-      ? "4px"
+    : /sharp|square/i.test(radiusSource)
+      ? "3px"
       : "10px";
 
-  const spacing = style?.section_spacing ?? "";
-  const space = /generous/i.test(spacing) ? 104 : /compact/i.test(spacing) ? 56 : 80;
+  const density = `${system?.visual_density ?? ""} ${style?.section_spacing ?? ""}`;
+  const space = /dense|compact/i.test(density)
+    ? 60
+    : /airy|generous/i.test(density)
+      ? 100
+      : 80;
+
+  const dividerSource = system?.section_divider_style ?? "";
+  const divider: Tokens["divider"] = /motif/i.test(dividerSource)
+    ? "motif"
+    : /angle|diagonal/i.test(dividerSource)
+      ? "angled"
+      : /none/i.test(dividerSource)
+        ? "none"
+        : "hairline";
+
+  const motion = !/none|still|static/i.test(system?.motion_style ?? "");
 
   const text = safeHex(p?.text, fb.text!);
   return {
@@ -137,10 +185,16 @@ function deriveTokens(style: VisualStyleJson | null, layout: LayoutType): Tokens
     text,
     muted: withAlpha(text, "99"),
     border: withAlpha(text, "17"),
-    headingFont: headingIsSerif ? SERIF_STACK : SANS_STACK,
-    bodyFont: SANS_STACK,
+    headingFont: `${font.headingFamily}, ${font.headingFallback}`,
+    headingWeight: font.headingWeight,
+    headingTracking: font.headingTracking,
+    bodyFont: `${font.bodyFamily}, ${font.bodyFallback}`,
     radius,
     space,
+    divider,
+    motifGlyph: LAYOUT_MOTIFS[layout],
+    motion,
+    font,
   };
 }
 
@@ -180,8 +234,36 @@ function todayLine(business: PreviewBusiness): string | null {
   return line ?? null;
 }
 
-function draftBanner(): string {
-  return `<div class="draft-banner" role="note">${escapeHtml(DISCLAIMER)}</div>`;
+/**
+ * Compliance notice, composed like a professional proof tag rather than a
+ * warning strip: a slim dark ribbon on top (static, scrolls away) plus the
+ * full disclaimer sentence in the footer bar.
+ */
+function draftNote(): string {
+  return `<div class="draft-note" role="note"><div class="inner"><b>${escapeHtml(NOTE_SHORT)}</b><span>${escapeHtml(NOTE_LONG)}</span></div></div>`;
+}
+
+/**
+ * Asymmetric section header with an oversized outlined index numeral — the
+ * editorial device that breaks uniform section stacking.
+ */
+function sectionHead(
+  index: number,
+  kicker: string,
+  title: string,
+  headingId: string,
+  intro?: string
+): string {
+  return `<div class="sec-head">
+    <div><p class="kicker">${escapeHtml(kicker)}</p><p class="ghost" aria-hidden="true">${String(index).padStart(2, "0")}</p></div>
+    <div><h2 id="${headingId}">${escapeHtml(title)}</h2>${intro ? `<p class="intro">${escapeHtml(intro)}</p>` : ""}</div>
+  </div>`;
+}
+
+/** Motif divider between sections (only when the design system asks for it). */
+function motifDivider(t: Tokens): string {
+  if (t.divider !== "motif") return "";
+  return `<div class="divider" aria-hidden="true"><span class="g">${escapeHtml(`${t.motifGlyph} ${t.motifGlyph} ${t.motifGlyph}`)}</span></div>`;
 }
 
 /**
@@ -224,7 +306,7 @@ function ctaButtons(
     ? `<p class="micro">${escapeHtml(opts.micro)}</p>`
     : "";
   return `<div class="cta-wrap"><div class="btn-row">
-    <a class="btn btn-primary" href="${escapeHtml(primaryHref)}" aria-label="${links.wa ? "Contact on WhatsApp" : "Contact"}">${escapeHtml(primaryLabel)}</a>
+    <a class="btn btn-primary" href="${escapeHtml(primaryHref)}" aria-label="${links.wa ? "Contact on WhatsApp" : "Contact"}">${escapeHtml(primaryLabel)}<span class="arr" aria-hidden="true">→</span></a>
     ${secondary}
   </div>${micro}</div>`;
 }
@@ -504,33 +586,53 @@ function baseCss(t: Tokens): string {
   :root { --primary:${t.primary}; --secondary:${t.secondary}; --accent:${t.accent}; --bg:${t.background}; --surface:${t.surface}; --text:${t.text}; }
   * { box-sizing:border-box; margin:0; padding:0; }
   html { scroll-behavior:smooth; }
-  body { font-family:${t.bodyFont}; background:var(--bg); color:var(--text); line-height:1.66; -webkit-font-smoothing:antialiased; padding-top:26px; }
+  body { font-family:${t.bodyFont}; background:var(--bg); color:var(--text); line-height:1.68; font-size:16px; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
   img, iframe { max-width:100%; }
   a { color:var(--primary); text-decoration-thickness:1px; text-underline-offset:3px; }
-  h1,h2,h3 { font-family:${t.headingFont}; line-height:1.14; color:var(--text); font-weight:700; }
-  h2 { font-size:clamp(27px,3.4vw,38px); margin-bottom:12px; letter-spacing:-.015em; }
+  h1,h2,h3 { font-family:${t.headingFont}; line-height:1.12; color:var(--text); font-weight:${t.headingWeight}; letter-spacing:${t.headingTracking}; }
+  h2 { font-size:clamp(28px,3.6vw,42px); margin-bottom:14px; }
   .container { max-width:1140px; margin:0 auto; padding:0 24px; }
   .container.narrow { max-width:780px; }
-  .section { padding:${t.space}px 0; }
+  .section { padding:${t.space}px 0; position:relative; }
   .muted { color:${t.muted}; }
   .small { font-size:13px; color:${t.muted}; }
-  .micro { font-size:12.5px; color:${t.muted}; margin-top:10px; }
-  .kicker { font-size:12px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:var(--primary); margin-bottom:10px; display:flex; align-items:center; gap:12px; }
+  .micro { font-size:12.5px; color:${t.muted}; margin-top:10px; letter-spacing:.01em; }
+  .kicker { font-size:11.5px; font-weight:700; letter-spacing:.22em; text-transform:uppercase; color:var(--primary); margin-bottom:12px; display:flex; align-items:center; gap:12px; font-family:${t.bodyFont}; }
   .kicker::after { content:""; height:1px; width:44px; background:${withAlpha(t.primary, "59")}; }
-  .draft-banner { position:fixed; inset:0 0 auto 0; z-index:70; background:#fbbf24; color:#451a03; padding:6px 16px; text-align:center; font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; box-shadow:0 1px 4px rgba(0,0,0,.15); }
+
+  /* Concept-draft notice: compliant but composed — a professional proof tag,
+     not a warning banner. Static ribbon on top + repeated in the footer. */
+  .draft-note { background:var(--secondary); color:${withAlpha("#ffffff", "b3")}; font-size:11px; letter-spacing:.14em; text-transform:uppercase; }
+  .draft-note .inner { max-width:1140px; margin:0 auto; padding:8px 24px; display:flex; justify-content:space-between; gap:14px; align-items:center; }
+  .draft-note b { color:#fff; font-weight:600; letter-spacing:.18em; }
+  .draft-note span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Asymmetric section header: kicker + oversized ghost index left, title +
+     intro right. The editorial move that kills flat section stacking. */
+  .sec-head { display:grid; gap:10px 48px; align-items:end; margin-bottom:34px; }
+  @media(min-width:880px){ .sec-head { grid-template-columns:minmax(150px,.42fr) 1fr; } }
+  .sec-head .ghost { font-family:${t.headingFont}; font-size:clamp(64px,8vw,110px); line-height:.8; font-weight:${t.headingWeight}; color:transparent; -webkit-text-stroke:1.5px ${withAlpha(t.text, "2b")}; user-select:none; }
+  .sec-head h2 { margin-bottom:6px; }
+  .sec-head .intro { color:${t.muted}; max-width:560px; font-size:15.5px; }
+
+  .divider { display:flex; align-items:center; gap:18px; max-width:1140px; margin:0 auto; padding:0 24px; color:${withAlpha(t.primary, "8c")}; }
+  .divider::before, .divider::after { content:""; flex:1; height:1px; background:${t.border}; }
+  .divider .g { font-size:13px; letter-spacing:.4em; }
 
   .btn-row { display:flex; flex-wrap:wrap; gap:14px; }
-  .btn { display:inline-block; padding:14px 30px; border-radius:${t.radius}; font-weight:600; font-size:16px; text-decoration:none; transition:transform .18s ease, box-shadow .18s ease, opacity .18s ease, background-color .18s ease; }
+  .btn { display:inline-flex; align-items:center; gap:10px; padding:14px 28px; border-radius:${t.radius}; font-weight:600; font-size:15.5px; text-decoration:none; transition:transform .18s ease, box-shadow .18s ease, opacity .18s ease, background-color .18s ease; }
+  .btn .arr { display:inline-block; transition:transform .18s ease; font-family:${t.bodyFont}; }
   .btn:hover { transform:translateY(-2px); }
-  .btn-primary { background:var(--primary); color:#fff; box-shadow:0 8px 22px ${withAlpha(t.primary, "40")}; }
-  .btn-primary:hover { box-shadow:0 12px 28px ${withAlpha(t.primary, "52")}; }
-  .btn-outline { border:2px solid var(--primary); color:var(--primary); background:transparent; }
-  .btn-outline:hover { background:${withAlpha(t.primary, "0d")}; }
+  .btn:hover .arr { transform:translateX(4px); }
+  .btn-primary { background:var(--primary); color:#fff; box-shadow:0 8px 22px ${withAlpha(t.primary, "38")}; }
+  .btn-primary:hover { box-shadow:0 12px 28px ${withAlpha(t.primary, "4d")}; }
+  .btn-outline { border:1.5px solid ${withAlpha(t.text, "40")}; color:var(--text); background:transparent; }
+  .btn-outline:hover { border-color:var(--text); background:${withAlpha(t.text, "08")}; }
 
   .review-strip { background:var(--surface); border-block:1px solid ${t.border}; }
-  .review-strip .inner { display:flex; flex-wrap:wrap; align-items:center; gap:12px 16px; padding-block:16px; font-size:14px; }
-  .rs-label { font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--primary); margin-right:6px; }
-  .rs-item { color:${t.muted}; font-weight:500; }
+  .review-strip .inner { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px 22px; padding-block:18px; }
+  .rs-label { font-size:11px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color:var(--primary); margin-right:4px; }
+  .rs-item { color:${t.muted}; font-family:${t.headingFont}; font-size:15.5px; font-style:${t.font.hasDisplayItalic ? "italic" : "normal"}; }
   .rs-dot { color:${withAlpha(t.primary, "66")}; }
 
   .hours-list { list-style:none; }
@@ -669,7 +771,7 @@ function renderPremiumService(ctx: RenderContext, t: Tokens, links: Links): { cs
   const today = todayLine(business);
 
   const css = `
-  .top-nav { position:sticky; top:26px; z-index:50; background:${withAlpha(t.background, "f0")}; backdrop-filter:blur(10px); border-bottom:1px solid ${t.border}; }
+  .top-nav { position:sticky; top:0; z-index:50; background:${withAlpha(t.background, "f0")}; backdrop-filter:blur(10px); border-bottom:1px solid ${t.border}; }
   .top-nav .inner { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:15px 24px; max-width:1140px; margin:0 auto; }
   .top-nav .name { font-family:${t.headingFont}; font-weight:700; font-size:18px; color:var(--text); text-decoration:none; letter-spacing:.01em; }
   .top-nav .nav-links { display:none; gap:26px; font-size:14px; }
@@ -682,17 +784,17 @@ function renderPremiumService(ctx: RenderContext, t: Tokens, links: Links): { cs
   @media(min-width:880px){ .hero-split { grid-template-columns:1.1fr .9fr; } }
   .hero-split h1 { font-size:clamp(36px,4.8vw,58px); letter-spacing:-.02em; margin:18px 0 20px; }
   .hero-split h1 em { font-style:italic; color:var(--primary); }
-  .hero-split .sub { font-size:18px; color:${t.muted}; max-width:520px; margin-bottom:30px; }
+  .hero-split .sub { font-size:19px; color:${t.muted}; max-width:520px; margin-bottom:30px; ${t.font.hasDisplayItalic ? `font-family:${t.headingFont}; font-style:italic; font-weight:480;` : ""} }
   .panel-stack { position:relative; aspect-ratio:4/5; }
   .panel-stack .p1 { position:absolute; inset:0 10% 12% 0; border-radius:22px; background:linear-gradient(160deg, ${withAlpha(t.primary, "2b")}, ${withAlpha(t.accent, "1f")} 65%, ${withAlpha(t.secondary, "14")}); display:flex; align-items:center; justify-content:center; }
-  .panel-stack .p1 span { font-family:${SERIF_STACK}; font-size:clamp(96px,11vw,150px); color:${withAlpha(t.primary, "59")}; }
+  .panel-stack .p1 span { font-family:${t.headingFont}; font-style:${t.font.hasDisplayItalic ? "italic" : "normal"}; font-size:clamp(96px,11vw,150px); color:${withAlpha(t.primary, "59")}; }
   .panel-stack .p2 { position:absolute; right:0; bottom:0; width:56%; border-radius:18px; background:var(--surface); border:1px solid ${t.border}; box-shadow:0 24px 60px ${withAlpha(t.text, "1a")}; padding:20px 22px; }
   .panel-stack .p2 .k { font-size:11px; font-weight:700; letter-spacing:.13em; text-transform:uppercase; color:var(--primary); }
   .panel-stack .p2 p { font-size:13.5px; color:${t.muted}; margin-top:6px; }
   .hero-editorial { padding:${t.space + 20}px 0 ${Math.round(t.space * 0.8)}px; border-bottom:1px solid ${t.border}; }
   .hero-editorial h1 { font-size:clamp(40px,6vw,72px); letter-spacing:-.025em; max-width:900px; margin:20px 0 22px; }
   .hero-editorial h1 em { font-style:italic; color:var(--primary); }
-  .hero-editorial .sub { font-size:19px; color:${t.muted}; max-width:600px; margin-bottom:30px; }
+  .hero-editorial .sub { font-size:20px; color:${t.muted}; max-width:600px; margin-bottom:30px; ${t.font.hasDisplayItalic ? `font-family:${t.headingFont}; font-style:italic; font-weight:480;` : ""} }
   .hero-editorial .info-float { margin-top:44px; display:grid; gap:1px; background:${t.border}; border:1px solid ${t.border}; border-radius:18px; overflow:hidden; }
   @media(min-width:760px){ .hero-editorial .info-float { grid-template-columns:1fr 1fr 1fr; } }
   .hero-editorial .info-float > div { background:var(--surface); padding:18px 22px; }
@@ -703,7 +805,7 @@ function renderPremiumService(ctx: RenderContext, t: Tokens, links: Links): { cs
   .sig-item { display:grid; grid-template-columns:70px 1fr; gap:22px; padding:30px 0; border-top:1px solid ${t.border}; transition:background-color .2s ease; }
   .sig-item:hover { background:${withAlpha(t.primary, "05")}; }
   .sig-item:last-child { border-bottom:1px solid ${t.border}; }
-  .sig-item .num { font-family:${SERIF_STACK}; font-size:28px; color:${withAlpha(t.primary, "8c")}; }
+  .sig-item .num { font-family:${t.headingFont}; font-size:28px; font-style:${t.font.hasDisplayItalic ? "italic" : "normal"}; color:${withAlpha(t.primary, "8c")}; }
   .sig-item h3 { font-size:21px; margin-bottom:6px; }
   .sig-item p { color:${t.muted}; font-size:15px; max-width:660px; }
   .about-band { background:var(--surface); border-block:1px solid ${t.border}; }
@@ -763,8 +865,7 @@ function renderPremiumService(ctx: RenderContext, t: Tokens, links: Links): { cs
   <main>
     <section class="section" id="signature" aria-labelledby="sig-h">
       <div class="container">
-        <p class="kicker">Signature</p>
-        <h2 id="sig-h">What clients come here for</h2>
+        ${sectionHead(1, "Signature", "What clients come here for", "sig-h", brief?.local_seo_angle || undefined)}
         <div class="sig-list">
           ${signatures.map((s, i) => `<div class="sig-item reveal" style="transition-delay:${i * 70}ms"><span class="num">0${i + 1}</span><div><h3>${escapeHtml(s.title)}</h3><p>${escapeHtml(s.description)}</p></div></div>`).join("")}
         </div>
@@ -849,7 +950,8 @@ function renderLocalPractical(ctx: RenderContext, t: Tokens, links: Links): { cs
   .hours-aside h3 { margin-bottom:8px; font-size:18px; }
   .hours-aside .today { background:${withAlpha(t.primary, "12")}; border-radius:10px; padding:10px 14px; font-size:13.5px; font-weight:600; color:var(--primary); margin-bottom:12px; }
   .svc-rows { margin-top:26px; display:grid; gap:14px; }
-  .svc-row { background:var(--surface); border:1px solid ${t.border}; border-left:5px solid var(--primary); border-radius:12px; padding:20px 24px; transition:transform .18s ease, box-shadow .18s ease, border-left-width .18s ease; }
+  .svc-row { background:var(--surface); border:1px solid ${t.border}; border-left:5px solid var(--primary); border-radius:12px; padding:20px 24px 20px 20px; display:grid; grid-template-columns:52px 1fr; gap:16px; align-items:start; transition:transform .18s ease, box-shadow .18s ease; }
+  .svc-row .svc-i { font-family:${t.headingFont}; font-weight:${t.headingWeight}; font-size:22px; color:${withAlpha(t.primary, "73")}; padding-top:2px; }
   .svc-row:hover { transform:translateX(4px); box-shadow:0 10px 26px ${withAlpha(t.text, "12")}; }
   .svc-row h3 { font-size:17.5px; margin-bottom:4px; }
   .svc-row p { font-size:14.5px; color:${t.muted}; }
@@ -894,10 +996,9 @@ function renderLocalPractical(ctx: RenderContext, t: Tokens, links: Links): { cs
   <main>
     <section class="section" id="services" aria-labelledby="svc-h">
       <div class="container">
-        <p class="kicker">Services</p>
-        <h2 id="svc-h">What we do</h2>
+        ${sectionHead(1, "Services", "What we do", "svc-h")}
         <div class="svc-rows">
-          ${copy.services.map((s, i) => `<div class="svc-row reveal" style="transition-delay:${i * 60}ms"><h3>${escapeHtml(s.title)}</h3><p>${escapeHtml(s.description)}</p></div>`).join("")}
+          ${copy.services.map((s, i) => `<div class="svc-row reveal" style="transition-delay:${i * 60}ms"><span class="svc-i" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span><div><h3>${escapeHtml(s.title)}</h3><p>${escapeHtml(s.description)}</p></div></div>`).join("")}
         </div>
       </div>
     </section>
@@ -944,7 +1045,7 @@ function renderHospitality(ctx: RenderContext, t: Tokens, links: Links): { css: 
   const css = `
   .hero-hosp { text-align:center; padding:${t.space + 28}px 0 ${Math.round(t.space * 1.1)}px; background:radial-gradient(90% 100% at 50% 0%, ${withAlpha(t.primary, "1c")} 0%, var(--bg) 78%); position:relative; }
   .hero-hosp h1 { font-size:clamp(36px,5.4vw,62px); margin:20px auto 16px; max-width:800px; letter-spacing:-.015em; }
-  .hero-hosp .sub { font-size:18px; color:${t.muted}; max-width:560px; margin:0 auto 28px; }
+  .hero-hosp .sub { font-size:19px; color:${t.muted}; max-width:560px; margin:0 auto 28px; ${t.font.hasDisplayItalic ? `font-family:${t.headingFont}; font-style:italic;` : ""} }
   .hero-hosp .btn-row, .hero-hosp .cta-wrap .btn-row { justify-content:center; }
   .hero-hosp .micro { text-align:center; }
   .orn { color:var(--accent); font-size:18px; letter-spacing:.7em; margin-top:20px; }
@@ -954,7 +1055,7 @@ function renderHospitality(ctx: RenderContext, t: Tokens, links: Links): { css: 
   .hero-board .grid { display:grid; gap:40px; align-items:center; }
   @media(min-width:900px){ .hero-board .grid { grid-template-columns:1.05fr .95fr; } }
   .hero-board h1 { font-size:clamp(34px,4.8vw,54px); letter-spacing:-.015em; margin:18px 0 16px; }
-  .hero-board .sub { font-size:18px; color:${t.muted}; margin-bottom:28px; max-width:520px; }
+  .hero-board .sub { font-size:19px; color:${t.muted}; margin-bottom:28px; max-width:520px; ${t.font.hasDisplayItalic ? `font-family:${t.headingFont}; font-style:italic;` : ""} }
   .menu-board { background:var(--surface); border:1px solid ${t.border}; border-radius:20px; box-shadow:0 24px 56px ${withAlpha(t.text, "14")}; padding:32px; transform:rotate(.6deg); }
   .menu-board .mb-k { text-align:center; font-size:11px; font-weight:700; letter-spacing:.22em; text-transform:uppercase; color:var(--primary); }
   .menu-board .mb-orn { text-align:center; color:var(--accent); letter-spacing:.5em; font-size:13px; margin:6px 0 14px; }
@@ -1007,14 +1108,14 @@ function renderHospitality(ctx: RenderContext, t: Tokens, links: Links): { css: 
   <main>
     <section class="section menu-band" id="menu" aria-labelledby="menu-h">
       <div class="container">
-        <p class="kicker">From the reviews</p>
-        <h2 id="menu-h">What people order again</h2>
+        ${sectionHead(1, "From the reviews", "What people order again", "menu-h")}
         <div class="hl-list">
           ${menu.map((m, i) => `<div class="hl-row reveal" style="transition-delay:${i * 60}ms"><div class="hl-t"><b>${escapeHtml(m.title)}</b><span class="leader" aria-hidden="true"></span></div><p>${escapeHtml(m.description)}</p></div>`).join("")}
         </div>
       </div>
     </section>
     ${renderFeatureSections(copy, business, { skipHighlights: true })}
+    ${motifDivider(t)}
     <section class="section about-hosp" id="about" aria-labelledby="ab-h">
       <div class="container">
         <p class="kicker" style="justify-content:center">Our place</p>
@@ -1114,8 +1215,7 @@ function renderWellnessClinic(ctx: RenderContext, t: Tokens, links: Links): { cs
   <main>
     <section class="section calm-band" id="treatments" aria-labelledby="tr-h">
       <div class="container">
-        <p class="kicker">Care</p>
-        <h2 id="tr-h">Treatments &amp; services</h2>
+        ${sectionHead(1, "Care", "Treatments & services", "tr-h")}
         <div class="treat-grid">
           ${treatments.map((s, i) => `<div class="treat-card reveal" style="transition-delay:${i * 60}ms"><h3>${escapeHtml(s.title)}</h3><p>${escapeHtml(s.description)}</p></div>`).join("")}
         </div>
@@ -1233,8 +1333,7 @@ function renderCreativePortfolio(ctx: RenderContext, t: Tokens, links: Links): {
   <main>
     <section class="section" id="work" aria-labelledby="work-h" style="padding-top:${Math.round(t.space * 0.6)}px">
       <div class="container">
-        <p class="kicker">What we make</p>
-        <h2 id="work-h">Selected work &amp; specialties</h2>
+        ${sectionHead(1, "What we make", "Selected work & specialties", "work-h")}
         ${projects.map((p, i) => `<div class="work-row"><div class="panel reveal" style="background:${panelColors[i % panelColors.length]}" role="img" aria-label="Placeholder panel for ${escapeHtml(p.title)}"><span>${escapeHtml(p.title)}</span></div><div class="reveal"><p class="num">0${i + 1}</p><h3>${escapeHtml(p.title)}</h3><p>${escapeHtml(p.description)}</p></div></div>`).join("")}
       </div>
     </section>
@@ -1276,6 +1375,8 @@ function renderPremiumProfessional(ctx: RenderContext, t: Tokens, links: Links):
   const areas = mergedHighlights(copy, 3, 5);
 
   const css = `
+  body::after { content:""; position:fixed; inset:10px; border:1px solid ${withAlpha(t.secondary, "30")}; pointer-events:none; z-index:65; }
+  @media(max-width:759px){ body::after { display:none; } }
   .pro-nav { background:var(--secondary); }
   .pro-nav .inner { max-width:1140px; margin:0 auto; padding:16px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
   .pro-nav .name { color:#fff; font-family:${t.headingFont}; font-weight:700; font-size:18px; text-decoration:none; letter-spacing:.02em; }
@@ -1336,7 +1437,7 @@ function renderPremiumProfessional(ctx: RenderContext, t: Tokens, links: Links):
         ${ctaButtons(links, copy, { secondaryLabel: "Call the office", micro: "Enquiries are confidential." })}
       </div>
       <nav class="index-list reveal in" aria-label="Practice areas">
-        ${areas.map((a, i) => `<a href="#practice"><span class="n">0${i + 1}</span><span class="t">${escapeHtml(a.title)}</span></a>`).join("")}
+        ${areas.map((a, i) => `<a href="#practice"><span class="n">${ROMAN[i] ?? i + 1}</span><span class="t">${escapeHtml(a.title)}</span></a>`).join("")}
       </nav>
     </div>
   </header>`;
@@ -1372,10 +1473,9 @@ function renderPremiumProfessional(ctx: RenderContext, t: Tokens, links: Links):
   <main id="top">
     <section class="section" id="practice" aria-labelledby="pr-h">
       <div class="container">
-        <p class="kicker">Practice</p>
-        <h2 id="pr-h">Areas of work</h2>
+        ${sectionHead(1, "Practice", "Areas of work", "pr-h")}
         <div class="practice-rows">
-          ${areas.map((a, i) => `<div class="practice-row reveal" style="transition-delay:${i * 60}ms"><span class="num">0${i + 1}</span><div><h3>${escapeHtml(a.title)}</h3><p>${escapeHtml(a.description)}</p></div></div>`).join("")}
+          ${areas.map((a, i) => `<div class="practice-row reveal" style="transition-delay:${i * 60}ms"><span class="num">${ROMAN[i] ?? i + 1}</span><div><h3>${escapeHtml(a.title)}</h3><p>${escapeHtml(a.description)}</p></div></div>`).join("")}
         </div>
       </div>
     </section>
@@ -1503,11 +1603,17 @@ const RENDERERS: Record<
   "simple-landing": renderSimpleLanding,
 };
 
-/** Render the complete self-contained draft-website HTML for a business. */
+/** Render the complete draft-website HTML for a business. */
 export function renderWebsite(ctx: RenderContext): string {
-  const tokens = deriveTokens(ctx.style, ctx.layout);
+  const tokens = deriveTokens(ctx.style, ctx.system ?? null, ctx.layout);
   const links = deriveLinks(ctx.business, ctx.copy);
   const { css, body } = RENDERERS[ctx.layout](ctx, tokens, links);
+
+  // Fonts load with display:swap and degrade to curated system stacks, so the
+  // page renders fine offline and gains its real typographic voice online.
+  const fontLinks = `<link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="${escapeHtml(tokens.font.importHref)}" />`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1517,15 +1623,16 @@ export function renderWebsite(ctx: RenderContext): string {
   <title>${escapeHtml(ctx.copy.seo_title || ctx.business.name)}</title>
   <meta name="description" content="${escapeHtml(ctx.copy.seo_meta_description || "")}" />
   <meta name="robots" content="noindex, nofollow" />
+  ${fontLinks}
   <style>${baseCss(tokens)}
 ${css}</style>
 </head>
 <body>
-${draftBanner()}
+${draftNote()}
 ${body}
 ${siteFooter(ctx.business, links, ctx.copy)}
 ${stickyMobileCta(links, ctx.copy)}
-${REVEAL_SCRIPT}
+${tokens.motion ? REVEAL_SCRIPT : ""}
 </body>
 </html>`;
 }

@@ -16,6 +16,7 @@ import {
   type ClaimConfidence,
   type CreativeDirectionJson,
   type DesignBriefJson,
+  type DesignSystemJson,
   type QualityReportJson,
   type ResearchResult,
   type UniquenessNotes,
@@ -119,28 +120,30 @@ export function CreativeDirectionCard({
           </p>
 
           <div className="divide-y divide-border">
-            <MutedRow label="Visual mood" value={direction.visual_mood} />
+            <MutedRow label="Brand feel" value={direction.brand_feel} />
             <MutedRow
-              label="Layout personality"
-              value={direction.layout_personality}
+              label="Business character"
+              value={direction.business_character}
+            />
+            <MutedRow label="Visual story" value={direction.visual_story} />
+            <MutedRow
+              label="Layout attitude"
+              value={direction.layout_attitude}
             />
             <MutedRow
-              label="Signature design element"
-              value={direction.signature_design_element}
+              label="Signature motif"
+              value={direction.signature_motif}
             />
+            <MutedRow label="Section rhythm" value={direction.section_rhythm} />
+            <MutedRow label="CTA style" value={direction.cta_style} />
             <MutedRow
-              label="Business-specific feature"
-              value={direction.business_specific_feature}
-            />
-            <MutedRow label="Premium detail" value={direction.premium_detail} />
-            <MutedRow
-              label="Interaction idea"
-              value={direction.interaction_idea}
+              label="Image direction"
+              value={direction.image_direction}
             />
           </div>
 
           <p className="text-muted-foreground">
-            {direction.why_this_fits_the_business}
+            {direction.why_this_will_not_feel_generic}
           </p>
         </>
       )}
@@ -505,6 +508,81 @@ export function VisualStyleCard({ style }: { style: VisualStyleJson | null }) {
             <MutedRow label="Buttons" value={style.button_style} />
             <MutedRow label="Section spacing" value={style.section_spacing} />
             <MutedRow label="Overall feel" value={style.overall_feel} />
+          </div>
+        </>
+      )}
+    </InsightCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 3b. Design system
+// ---------------------------------------------------------------------------
+
+/** Human-readable labels for the curated font-pairing keys. */
+const FONT_PAIRING_LABELS: Record<string, string> = {
+  "editorial-luxury": "Fraunces + Inter",
+  "classic-authority": "Source Serif 4 + Public Sans",
+  "warm-hospitality": "Lora + Karla",
+  "bold-practical": "Archivo + Inter",
+  "calm-humanist": "Manrope + Inter",
+  "modern-creative": "Space Grotesk + Inter",
+  "friendly-compact": "Plus Jakarta Sans",
+};
+
+export function DesignSystemCard({
+  system,
+}: {
+  system: DesignSystemJson | null;
+}) {
+  return (
+    <InsightCard
+      title="Design system"
+      description="Type, spacing and surface rules generated for this site"
+    >
+      {!system ? (
+        <p className="text-muted-foreground">
+          No design system recorded — regenerate the design to create one.
+        </p>
+      ) : (
+        <>
+          <div>
+            <FieldLabel>Font pairing</FieldLabel>
+            <p className="mt-1 font-semibold">
+              {FONT_PAIRING_LABELS[system.typography_system.font_pairing] ??
+                system.typography_system.font_pairing}
+            </p>
+          </div>
+
+          <div className="divide-y divide-border">
+            <MutedRow
+              label="Headlines"
+              value={system.typography_system.headline_style}
+            />
+            <MutedRow
+              label="Subheadlines"
+              value={system.typography_system.subheadline_style}
+            />
+            <MutedRow
+              label="Body"
+              value={system.typography_system.body_style}
+            />
+            <MutedRow
+              label="Microcopy"
+              value={system.typography_system.microcopy_style}
+            />
+            <MutedRow label="Spacing" value={system.spacing_system} />
+            <MutedRow label="Visual density" value={system.visual_density} />
+            <MutedRow label="Grid logic" value={system.grid_logic} />
+            <MutedRow
+              label="Section dividers"
+              value={system.section_divider_style}
+            />
+            <MutedRow label="Corners" value={system.corner_radius_style} />
+            <MutedRow label="Buttons" value={system.button_style} />
+            <MutedRow label="Surfaces" value={system.surface_style} />
+            <MutedRow label="Borders" value={system.border_style} />
+            <MutedRow label="Motion" value={system.motion_style} />
           </div>
         </>
       )}

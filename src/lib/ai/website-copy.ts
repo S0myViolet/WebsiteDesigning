@@ -74,10 +74,11 @@ function buildSystemPrompt(
   const directionBlock = direction
     ? `CREATIVE DIRECTION (the copy must serve this design concept):
 - Concept: ${direction.creative_concept}
-- Visual mood: ${direction.visual_mood}
-- Signature design element: ${direction.signature_design_element}
-- Business-specific feature to write content for: ${direction.business_specific_feature}
-- Premium detail: ${direction.premium_detail}`
+- Brand feel: ${direction.brand_feel}
+- Visual story (what the first five seconds should say): ${direction.visual_story}
+- Signature motif: ${direction.signature_motif}
+- CTA personality: ${direction.cta_style}
+- What must separate this from a template: ${direction.why_this_will_not_feel_generic}`
     : "";
 
   const briefBlock = brief

@@ -6,6 +6,7 @@
 
 import type {
   DesignBriefJson,
+  DesignSystemJson,
   LayoutType,
   VisualStyleJson,
   WebsiteCopyJson,
@@ -23,6 +24,7 @@ export interface PreviewInput {
   /** Optional pipeline artifacts — when present the preview is fully styled */
   brief?: DesignBriefJson | null;
   style?: VisualStyleJson | null;
+  system?: DesignSystemJson | null;
   layout?: LayoutType;
 }
 
@@ -43,6 +45,7 @@ export function buildPreviewHtml(input: PreviewInput): string {
     copy: input.copy,
     brief: input.brief ?? null,
     style: input.style ?? null,
+    system: input.system ?? null,
     layout,
   };
   return renderWebsite(ctx);

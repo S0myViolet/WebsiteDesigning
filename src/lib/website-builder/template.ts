@@ -4,9 +4,9 @@
 //
 // The export mirrors the seven in-dashboard preview variants (layouts.ts): the
 // layout type picks a structurally different page component, and the visual
-// style (6-color palette, typography direction, button shape, section
-// spacing) is derived into typed style tokens that are wired into the
-// exported Tailwind theme and globals.css.
+// style + design system (6-color palette, curated Google-Fonts pairing,
+// corner radius, visual density) are derived into typed style tokens that are
+// wired into the exported Tailwind theme and globals.css.
 //
 // Safety model: every generated source file is a fixed string with NO user
 // text interpolated into JSX/TSX literals. All business data and AI copy is
@@ -16,21 +16,32 @@
 // Google rating / review count is intentionally never included in the export
 // (Maps content policy).
 
-import type { FeatureSection, LayoutType, VisualStyleJson } from "@/lib/types";
+import type {
+  DesignSystemJson,
+  FeatureSection,
+  LayoutType,
+  VisualStyleJson,
+} from "@/lib/types";
 import { LAYOUT_TYPE_LABELS } from "@/lib/types";
 import type { PreviewInput } from "./preview-html";
 import { selectLayout } from "./layout-select";
+import { resolveFontPairing, type FontPairing } from "./fonts";
 import { normalizePhone, whatsappLink } from "@/lib/utils";
 
+// Compliance notice, composed like a professional proof tag rather than a
+// warning strip (mirrors layouts.ts): a slim static ribbon on top plus the
+// full disclaimer sentence in the footer bar.
+const NOTE_SHORT = "Concept draft";
+const NOTE_LONG =
+  "Design concept generated from the public Google profile — not the live website";
 const DISCLAIMER =
-  "DRAFT WEBSITE CONCEPT — generated from public Google Maps data; not the official website of this business";
+  "This is a website concept draft prepared from publicly available Google Maps profile data. It is not the official website of this business and is not published on its behalf.";
 
 // ---------------------------------------------------------------------------
 // Style tokens derived from the per-business VisualStyleJson
 // ---------------------------------------------------------------------------
 
-type HeadingFont = "serif" | "sans";
-type ButtonRadius = "999px" | "4px" | "10px";
+type ButtonRadius = "999px" | "3px" | "10px";
 type SectionSpacing = "compact" | "comfortable" | "generous";
 
 interface StyleColors {
@@ -44,7 +55,8 @@ interface StyleColors {
 
 interface StyleTokens {
   colors: StyleColors;
-  headingFont: HeadingFont;
+  /** Curated Google-Fonts pairing (family, fallback, weight, tracking). */
+  font: FontPairing;
   buttonRadius: ButtonRadius;
   sectionSpacing: SectionSpacing;
 }
@@ -109,35 +121,21 @@ const LAYOUT_COLOR_FALLBACKS: Record<LayoutType, StyleColors> = {
   },
 };
 
+/** Mirrors the preview's 60/80/100px vertical section rhythm. */
 const SECTION_SPACING_REM: Record<SectionSpacing, string> = {
-  compact: "3.25rem",
-  comfortable: "4.5rem",
-  generous: "6rem",
+  compact: "3.75rem",
+  comfortable: "5rem",
+  generous: "6.25rem",
 };
 
-const SANS_FONTS = [
-  "ui-sans-serif",
-  "system-ui",
-  "-apple-system",
-  "Segoe UI",
-  "Roboto",
-  "Helvetica Neue",
-  "Arial",
-  "sans-serif",
-];
+/** Full CSS heading stack from the curated pairing (family + fallback). */
+function headingStack(font: FontPairing): string {
+  return `${font.headingFamily}, ${font.headingFallback}`;
+}
 
-const SERIF_FONTS = [
-  "ui-serif",
-  "Georgia",
-  "Cambria",
-  "Times New Roman",
-  "Times",
-  "serif",
-];
-
-/** CSS font-family value (quotes names that contain whitespace). */
-function cssFontStack(fonts: string[]): string {
-  return fonts.map((f) => (/\s/.test(f) ? `"${f}"` : f)).join(", ");
+/** Full CSS body stack from the curated pairing (family + fallback). */
+function bodyStack(font: FontPairing): string {
+  return `${font.bodyFamily}, ${font.bodyFallback}`;
 }
 
 /** Normalize an AI-provided color to #rrggbb, with a fallback. */
@@ -158,34 +156,31 @@ function safeHex(value: string | null | undefined, fallback: string): string {
 
 function deriveStyleTokens(
   style: VisualStyleJson | null | undefined,
+  system: DesignSystemJson | null | undefined,
   layout: LayoutType
 ): StyleTokens {
   const fb = LAYOUT_COLOR_FALLBACKS[layout];
   const palette = style?.color_palette;
 
-  const headingFont: HeadingFont = style
-    ? /serif/i.test(style.typography.heading_style) &&
-      !/sans/i.test(style.typography.heading_style)
-      ? "serif"
-      : "sans"
-    : layout === "premium-service" ||
-        layout === "hospitality" ||
-        layout === "premium-professional"
-      ? "serif"
-      : "sans";
+  // Curated Google-Fonts pairing — same resolution as the preview renderer.
+  const font = resolveFontPairing(
+    system?.typography_system.font_pairing,
+    layout
+  );
 
-  const buttonStyle = style?.button_style ?? "";
-  const buttonRadius: ButtonRadius = /pill/i.test(buttonStyle)
+  // Same regex knobs as layouts.ts deriveTokens.
+  const radiusSource = `${system?.corner_radius_style ?? ""} ${style?.button_style ?? ""}`;
+  const buttonRadius: ButtonRadius = /pill/i.test(radiusSource)
     ? "999px"
-    : /sharp|square/i.test(buttonStyle)
-      ? "4px"
+    : /sharp|square/i.test(radiusSource)
+      ? "3px"
       : "10px";
 
-  const spacing = style?.section_spacing ?? "";
-  const sectionSpacing: SectionSpacing = /generous/i.test(spacing)
-    ? "generous"
-    : /compact/i.test(spacing)
-      ? "compact"
+  const density = `${system?.visual_density ?? ""} ${style?.section_spacing ?? ""}`;
+  const sectionSpacing: SectionSpacing = /dense|compact/i.test(density)
+    ? "compact"
+    : /airy|generous/i.test(density)
+      ? "generous"
       : "comfortable";
 
   return {
@@ -197,7 +192,7 @@ function deriveStyleTokens(
       surface: safeHex(palette?.surface, fb.surface),
       text: safeHex(palette?.text, fb.text),
     },
-    headingFont,
+    font,
     buttonRadius,
     sectionSpacing,
   };
@@ -254,7 +249,11 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
       hasEditorialSummary: true,
     });
 
-  const tokens = deriveStyleTokens(input.style ?? null, layout);
+  const tokens = deriveStyleTokens(
+    input.style ?? null,
+    input.system ?? null,
+    layout
+  );
 
   const phone = business.phone ? normalizePhone(business.phone) : "";
   const telUrl = phone ? `tel:${phone}` : null;
@@ -305,7 +304,7 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
     },
     style: {
       colors: tokens.colors,
-      headingFont: tokens.headingFont,
+      fontPairing: tokens.font.label,
       buttonRadius: tokens.buttonRadius,
       sectionSpacing: tokens.sectionSpacing,
     },
@@ -315,6 +314,7 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
       mapsUrl: safeHttpUrl(business.googleMapsUrl),
       mapEmbedUrl: `https://www.google.com/maps?q=${mapQuery}&output=embed`,
     },
+    draftNotice: { short: NOTE_SHORT, long: NOTE_LONG },
     disclaimer: DISCLAIMER,
   };
 
@@ -328,7 +328,7 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
     "tailwind.config.ts": buildTailwindConfig(tokens),
     "README.md": buildReadme(business.name, layout, tokens, input.style ?? null),
     "src/app/globals.css": buildGlobalsCss(tokens),
-    "src/app/layout.tsx": LAYOUT_TSX,
+    "src/app/layout.tsx": buildLayoutTsx(tokens.font),
     "src/app/page.tsx": buildPageTsx(layoutModule),
     "src/config/site.ts": buildSiteConfig(site),
     "src/components/DraftBanner.tsx": DRAFT_BANNER_TSX,
@@ -373,7 +373,6 @@ function buildPackageJson(businessName: string): string {
 }
 
 function buildTailwindConfig(tokens: StyleTokens): string {
-  const headingFonts = tokens.headingFont === "serif" ? SERIF_FONTS : SANS_FONTS;
   return `import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -388,9 +387,16 @@ const config: Config = {
         surface: ${JSON.stringify(tokens.colors.surface)},
         text: ${JSON.stringify(tokens.colors.text)},
       },
+      // Curated pairing: ${tokens.font.label} (Google Fonts + system fallback)
       fontFamily: {
-        heading: ${JSON.stringify(headingFonts)},
-        body: ${JSON.stringify(SANS_FONTS)},
+        heading: [${JSON.stringify(headingStack(tokens.font))}],
+        body: [${JSON.stringify(bodyStack(tokens.font))}],
+      },
+      fontWeight: {
+        heading: ${JSON.stringify(String(tokens.font.headingWeight))},
+      },
+      letterSpacing: {
+        heading: ${JSON.stringify(tokens.font.headingTracking)},
       },
       borderRadius: {
         btn: ${JSON.stringify(tokens.buttonRadius)},
@@ -408,10 +414,7 @@ export default config;
 }
 
 function buildGlobalsCss(tokens: StyleTokens): string {
-  const headingStack = cssFontStack(
-    tokens.headingFont === "serif" ? SERIF_FONTS : SANS_FONTS
-  );
-  const bodyStack = cssFontStack(SANS_FONTS);
+  const font = tokens.font;
   return `@tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -421,14 +424,22 @@ html {
 }
 
 body {
-  font-family: ${bodyStack};
+  font-family: ${bodyStack(font)};
 }
 
+/*
+ * Headings follow the curated font pairing (${font.label}). The Google Fonts
+ * stylesheet only loads weight ${font.headingWeight} for the heading face, so
+ * the pairing's weight and tracking stay authoritative over utility classes
+ * (font-bold would otherwise request an unloaded weight).
+ */
 h1,
 h2,
-h3,
-h4 {
-  font-family: ${headingStack};
+h3 {
+  font-family: ${headingStack(font)};
+  font-weight: ${font.headingWeight} !important;
+  letter-spacing: ${font.headingTracking} !important;
+  line-height: 1.12;
 }
 `;
 }
@@ -466,7 +477,8 @@ interface SiteConfigData {
   };
   style: {
     colors: StyleColors;
-    headingFont: HeadingFont;
+    /** Curated Google-Fonts pairing label, e.g. "Fraunces + Inter". */
+    fontPairing: string;
     buttonRadius: ButtonRadius;
     sectionSpacing: SectionSpacing;
   };
@@ -476,6 +488,8 @@ interface SiteConfigData {
     mapsUrl: string | null;
     mapEmbedUrl: string;
   };
+  /** Slim top-ribbon notice: short label + one-line note. */
+  draftNotice: { short: string; long: string };
   disclaimer: string;
 }
 
@@ -555,7 +569,7 @@ export interface SiteConfig {
     /** Business-specific feature sections (checklist, steps, reassurance...). */
     featureSections: SiteFeatureSection[];
   };
-  /** Style tokens derived from the AI visual style (wired into Tailwind). */
+  /** Style tokens derived from the AI design system (wired into Tailwind). */
   style: {
     colors: {
       primary: string;
@@ -565,8 +579,9 @@ export interface SiteConfig {
       surface: string;
       text: string;
     };
-    headingFont: "serif" | "sans";
-    buttonRadius: "999px" | "4px" | "10px";
+    /** Curated Google-Fonts pairing label, e.g. "Fraunces + Inter". */
+    fontPairing: string;
+    buttonRadius: "999px" | "3px" | "10px";
     sectionSpacing: "compact" | "comfortable" | "generous";
   };
   links: {
@@ -575,6 +590,9 @@ export interface SiteConfig {
     mapsUrl: string | null;
     mapEmbedUrl: string;
   };
+  /** Slim top-ribbon notice rendered by DraftBanner. */
+  draftNotice: { short: string; long: string };
+  /** Full disclaimer sentence rendered in the footer bar. */
   disclaimer: string;
 }
 
@@ -624,12 +642,13 @@ npm run start
 | --- | --- |
 | Layout variant | \`${layout}\` (${layoutLabel}) |${styleName ? `\n| Style name | ${styleName} |` : ""}
 | Colors | primary \`${c.primary}\` · secondary \`${c.secondary}\` · accent \`${c.accent}\` · background \`${c.background}\` · surface \`${c.surface}\` · text \`${c.text}\` |
-| Heading font | ${tokens.headingFont} (system font stack, no downloads) |
+| Font pairing | ${tokens.font.label} (Google Fonts with system fallback) |
 | Button radius | \`${tokens.buttonRadius}\` |
 | Section spacing | ${tokens.sectionSpacing} |
 
-The colors, fonts, button radius (\`rounded-btn\`) and section padding
-(\`py-section\`) are wired into \`tailwind.config.ts\` and \`src/app/globals.css\`.
+The colors, font pairing (\`font-heading\` / \`font-body\`), button radius
+(\`rounded-btn\`) and section padding (\`py-section\`) are wired into
+\`tailwind.config.ts\` and \`src/app/globals.css\`.
 
 ## Editing content
 
@@ -649,12 +668,14 @@ shots. Put images in \`public/\` and swap the gradient \`<div>\`s for
 
 - The booking/quote form is a **non-functional demo** (submit is disabled).
 - The map is embedded via a keyless Google Maps embed URL.
-- Fonts use system font stacks only (no external font downloads or CDNs).
+- Fonts load from Google Fonts with \`font-display: swap\` and degrade to
+  system font stacks when offline.
 - Testimonials are paraphrased from public reviews and shown without
   reviewer names; the Google star rating / review count is intentionally
   not displayed.
-- A fixed draft-disclaimer banner is rendered on every page; remove
-  \`DraftBanner\` only after the business owner approves the site.
+- A slim concept-draft ribbon is rendered at the top of every page and the
+  full disclaimer appears in the footer bar; remove \`DraftBanner\` and the
+  footer disclaimer only after the business owner approves the site.
 `;
 }
 
@@ -703,7 +724,13 @@ const POSTCSS_CONFIG = `module.exports = {
 };
 `;
 
-const LAYOUT_TSX = `/*
+/**
+ * layout.tsx with the curated Google Fonts pairing wired in via preconnect +
+ * stylesheet links. The href comes from the fixed FONT_PAIRINGS table (never
+ * from business data or AI output).
+ */
+function buildLayoutTsx(font: FontPairing): string {
+  return `/*
  * DRAFT WEBSITE CONCEPT — generated from public Google Maps profile data as a
  * demo for the business owner. Not the official website of this business.
  * Do NOT publish without the business owner's explicit approval.
@@ -719,27 +746,50 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+// Curated font pairing (${font.label}), loaded with font-display: swap;
+// the system fallback stacks in tailwind.config.ts keep the page legible
+// while fonts load (or offline).
+const FONT_STYLESHEET_HREF =
+  ${JSON.stringify(font.importHref)};
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      {/* pt-8 leaves room for the fixed DraftBanner */}
-      <body className="bg-background pt-8 font-body text-text antialiased">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link rel="stylesheet" href={FONT_STYLESHEET_HREF} />
+      </head>
+      <body className="bg-background font-body text-text antialiased">
         {children}
       </body>
     </html>
   );
 }
 `;
+}
 
-const DRAFT_BANNER_TSX = `import { SITE } from "@/config/site";
+const DRAFT_BANNER_TSX = `// Slim static concept ribbon (scrolls away with the page) — a professional
+// proof tag rather than a warning strip. The full disclaimer sentence is
+// rendered in the footer bottom bar by SiteFooter.
+import { SITE } from "@/config/site";
 
 export function DraftBanner() {
   return (
     <div
       role="note"
-      className="fixed inset-x-0 top-0 z-50 bg-amber-400 px-4 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-amber-950 shadow"
+      className="bg-secondary text-[11px] uppercase tracking-[0.14em] text-white/70"
     >
-      {SITE.disclaimer}
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-2">
+        <b className="shrink-0 font-semibold tracking-[0.18em] text-white">
+          {SITE.draftNotice.short}
+        </b>
+        <span className="truncate">{SITE.draftNotice.long}</span>
+      </div>
     </div>
   );
 }
@@ -854,11 +904,17 @@ export function CtaButtons({
         href={primaryHref}
         aria-label={links.whatsappUrl ? "Contact us on WhatsApp" : "Contact us"}
         className={
-          "rounded-btn px-7 py-3 text-base font-semibold text-white shadow-lg transition hover:opacity-90 " +
+          "group inline-flex items-center gap-2.5 rounded-btn px-7 py-3 text-base font-semibold text-white shadow-lg transition hover:opacity-90 " +
           primaryClass
         }
       >
         {copy.ctaText}
+        <span
+          aria-hidden="true"
+          className="inline-block transition-transform duration-200 group-hover:translate-x-1"
+        >
+          {"\\u2192"}
+        </span>
       </a>
       {links.whatsappUrl && links.telUrl ? (
         <a
@@ -872,6 +928,57 @@ export function CtaButtons({
           {secondaryLabel}
         </a>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Asymmetric section header with an oversized outlined index numeral — the
+ * editorial device that breaks uniform section stacking (mirrors the
+ * preview's .sec-head treatment). The numeral is drawn with a transparent
+ * fill and a text-stroke in the current text color at low opacity.
+ */
+export function SectionHead({
+  index,
+  kicker,
+  title,
+  intro,
+  headingId,
+}: {
+  index: number;
+  kicker: string;
+  title: string;
+  intro?: string;
+  headingId: string;
+}) {
+  const numeral = String(index).padStart(2, "0");
+  return (
+    <div className="mb-9 grid items-end gap-x-12 gap-y-3 md:grid-cols-[minmax(150px,0.42fr)_1fr]">
+      <div>
+        <p className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.22em] text-primary">
+          {kicker}
+          <span aria-hidden="true" className="h-px w-11 bg-primary/40" />
+        </p>
+        <p
+          aria-hidden="true"
+          className="select-none font-heading leading-[0.8] text-text/20"
+          style={{
+            fontSize: "clamp(64px, 8vw, 110px)",
+            WebkitTextStrokeWidth: "1.5px",
+            WebkitTextFillColor: "transparent",
+          }}
+        >
+          {numeral}
+        </p>
+      </div>
+      <div>
+        <h2 id={headingId} className="text-3xl font-bold">
+          {title}
+        </h2>
+        {intro ? (
+          <p className="mt-2 max-w-xl leading-relaxed text-text/60">{intro}</p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1374,6 +1481,7 @@ import {
   HoursList,
   MapEmbed,
   PullQuotes,
+  SectionHead,
 } from "@/components/Shared";
 import { SITE } from "@/config/site";
 
@@ -1387,7 +1495,7 @@ export function PremiumServicePage() {
     <>
       <nav
         aria-label="Main"
-        className="sticky top-8 z-40 border-b border-text/10 bg-surface/90 backdrop-blur"
+        className="sticky top-0 z-40 border-b border-text/10 bg-surface/90 backdrop-blur"
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-3">
           <a href="#top" className="font-heading text-lg font-bold">
@@ -1396,9 +1504,15 @@ export function PremiumServicePage() {
           <a
             href={links.whatsappUrl ?? links.telUrl ?? "#contact"}
             aria-label={links.whatsappUrl ? "Contact us on WhatsApp" : "Contact us"}
-            className="rounded-btn bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+            className="group inline-flex items-center gap-2 rounded-btn bg-primary px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90"
           >
             {copy.ctaText}
+            <span
+              aria-hidden="true"
+              className="inline-block transition-transform duration-200 group-hover:translate-x-1"
+            >
+              {"\\u2192"}
+            </span>
           </a>
         </div>
       </nav>
@@ -1434,11 +1548,13 @@ export function PremiumServicePage() {
       <main>
         <section id="signature" aria-labelledby="signature-heading" className="px-5 py-section">
           <div className="mx-auto max-w-6xl">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Signature</p>
-            <h2 id="signature-heading" className="mt-2 text-3xl font-bold">
-              What clients come here for
-            </h2>
-            <div className="mt-8 divide-y divide-text/10 border-y border-text/10">
+            <SectionHead
+              index={1}
+              kicker="Signature"
+              title="What clients come here for"
+              headingId="signature-heading"
+            />
+            <div className="divide-y divide-text/10 border-y border-text/10">
               {signatures.map((item, index) => (
                 <div key={item.title} className="grid grid-cols-[56px_1fr] gap-5 py-6">
                   <span aria-hidden="true" className="font-heading text-2xl text-primary">
@@ -1538,6 +1654,7 @@ import {
   FeatureSections,
   HoursList,
   MapEmbed,
+  SectionHead,
   TestimonialCards,
 } from "@/components/Shared";
 import { SITE } from "@/config/site";
@@ -1599,10 +1716,13 @@ export function LocalPracticalPage() {
       <main>
         <section id="services" aria-labelledby="services-heading" className="px-5 pb-section">
           <div className="mx-auto max-w-6xl">
-            <h2 id="services-heading" className="text-3xl font-bold">
-              What we do
-            </h2>
-            <div className="mt-6 grid gap-4">
+            <SectionHead
+              index={1}
+              kicker="Services"
+              title="What we do"
+              headingId="services-heading"
+            />
+            <div className="grid gap-4">
               {copy.services.map((service) => (
                 <div
                   key={service.title}
@@ -1678,6 +1798,7 @@ import {
   FeatureSections,
   HoursList,
   MapEmbed,
+  SectionHead,
   TestimonialCards,
 } from "@/components/Shared";
 import { SITE } from "@/config/site";
@@ -1714,13 +1835,13 @@ export function HospitalityPage() {
           className="border-y border-text/10 bg-surface px-5 py-section"
         >
           <div className="mx-auto max-w-3xl">
-            <p className="text-center text-xs font-bold uppercase tracking-[0.16em] text-primary">
-              From the reviews
-            </p>
-            <h2 id="menu-heading" className="mt-2 text-center text-3xl font-bold">
-              What people order again
-            </h2>
-            <div className="mt-8">
+            <SectionHead
+              index={1}
+              kicker="From the reviews"
+              title="What people order again"
+              headingId="menu-heading"
+            />
+            <div>
               {menu.map((item) => (
                 <div
                   key={item.title}
@@ -1800,6 +1921,7 @@ import {
   FeatureSections,
   HoursList,
   MapEmbed,
+  SectionHead,
   TestimonialCards,
 } from "@/components/Shared";
 import { SITE } from "@/config/site";
@@ -1850,11 +1972,13 @@ export function WellnessClinicPage() {
           className="bg-primary/5 px-5 py-section"
         >
           <div className="mx-auto max-w-6xl">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Care</p>
-            <h2 id="treatments-heading" className="mt-2 text-3xl font-bold">
-              Treatments and services
-            </h2>
-            <div className="mt-7 grid gap-5 md:grid-cols-2">
+            <SectionHead
+              index={1}
+              kicker="Care"
+              title="Treatments and services"
+              headingId="treatments-heading"
+            />
+            <div className="grid gap-5 md:grid-cols-2">
               {treatments.map((treatment) => (
                 <div key={treatment.title} className="rounded-xl border border-text/10 bg-surface p-6">
                   <h3 className="text-lg font-semibold">{treatment.title}</h3>
