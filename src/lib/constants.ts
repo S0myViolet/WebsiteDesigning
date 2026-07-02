@@ -209,7 +209,7 @@ export const WEBSITE_STYLE_OPTIONS = [
   "Clean & professional",
 ] as const;
 
-export const AI_MODEL_OPTIONS = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"] as const;
+export const AI_MODEL_OPTIONS = ["gpt-4o", "gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"] as const;
 
 export const DEFAULT_SETTINGS = {
   defaultAreas: DUBAI_AREAS.map((a) => a.name),
@@ -219,7 +219,10 @@ export const DEFAULT_SETTINGS = {
   includeChains: false,
   includeUncertainWebsites: false,
   defaultWebsiteStyle: "Modern & minimal",
-  aiModel: "gpt-4o-mini",
+  // gpt-4o by default: the design brief, agency-voice copy, and quality gate
+  // need the stronger model; a full site generation still costs only a few
+  // cents. Switchable to gpt-4o-mini in Settings for cheaper bulk runs.
+  aiModel: "gpt-4o",
   exportColumns: [
     "name",
     "category",

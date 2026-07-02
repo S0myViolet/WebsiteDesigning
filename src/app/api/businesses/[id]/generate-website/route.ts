@@ -198,7 +198,7 @@ export async function POST(
       });
     }
 
-    // ---- Step 9: quality gate with one automatic improvement pass ----------
+    // ---- Step 9: quality gate with up to two automatic improvement passes --
     let report: QualityReportJson = await reviewWebsiteQuality(
       input,
       copy,
@@ -206,7 +206,13 @@ export async function POST(
       layout,
       ai
     );
-    if (report.quality_score < QUALITY_THRESHOLD && report.improvement_instructions) {
+    for (
+      let attempt = 0;
+      attempt < 2 &&
+      report.quality_score < QUALITY_THRESHOLD &&
+      report.improvement_instructions;
+      attempt++
+    ) {
       const improved = await generateWebsiteCopy(input, analysisJson, {
         ...ai,
         websiteStyle: settings.defaultWebsiteStyle,
@@ -224,6 +230,8 @@ export async function POST(
       if (improvedReport.quality_score >= report.quality_score) {
         copy = improved;
         report = improvedReport;
+      } else {
+        break; // the rewrite got worse — keep the best draft we have
       }
     }
 

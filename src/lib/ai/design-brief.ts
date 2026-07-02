@@ -156,10 +156,57 @@ function formatZodIssues(error: z.ZodError): string {
 /** Colors are data, not prose: validate as hex, never run text sanitizers. */
 function safeHex(value: string, fallback: string): string {
   const raw = value.trim().replace(/^#/, "");
-  if (/^[0-9a-fA-F]{3}$/.test(raw) || /^[0-9a-fA-F]{6}$/.test(raw)) {
+  if (/^[0-9a-fA-F]{3}$/.test(raw)) {
+    return `#${raw.split("").map((c) => c + c).join("")}`.toLowerCase();
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(raw)) {
     return `#${raw.toLowerCase()}`;
   }
   return fallback;
+}
+
+/** WCAG-style relative luminance (0 = black, 1 = white). */
+function luminance(hex: string): number {
+  const raw = hex.replace("#", "");
+  const channel = (i: number) => {
+    const c = parseInt(raw.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+}
+
+/** Darken a hex color by mixing toward black (amount 0..1). */
+function darken(hex: string, amount: number): string {
+  const raw = hex.replace("#", "");
+  const mix = (i: number) =>
+    Math.round(parseInt(raw.slice(i, i + 2), 16) * (1 - amount))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${mix(0)}${mix(2)}${mix(4)}`;
+}
+
+/**
+ * AI palettes sometimes pick washed-out primaries (pale beiges "for
+ * elegance") that make white-on-primary buttons unreadable. Enforce basic
+ * usability invariants: primary/secondary dark enough for white text,
+ * background genuinely light, text genuinely dark.
+ */
+function enforceContrast(palette: VisualStyleJson["color_palette"]): VisualStyleJson["color_palette"] {
+  let { primary, secondary } = palette;
+  let { accent, background, text, surface } = palette;
+
+  // Primary must carry white button text: darken pale picks until it can.
+  if (luminance(primary) > 0.45) {
+    const darkened = darken(primary, 0.45);
+    primary = luminance(darkened) <= 0.45 ? darkened : FALLBACK_PALETTE.primary;
+  }
+  if (luminance(secondary) > 0.6) secondary = darken(secondary, 0.5);
+  if (luminance(background) < 0.75) background = FALLBACK_PALETTE.background;
+  if (luminance(surface) < 0.7) surface = FALLBACK_PALETTE.surface;
+  if (luminance(text) > 0.35) text = FALLBACK_PALETTE.text;
+  if (luminance(accent) > 0.85) accent = darken(accent, 0.25);
+
+  return { primary, secondary, accent, background, surface, text };
 }
 
 function cleanStrings(values: string[]): string[] {
@@ -203,14 +250,14 @@ function finalize(data: z.infer<typeof responseSchema>): {
   const style: VisualStyleJson = {
     style_name: sanitizeCopy(s.style_name).trim() || "Tailored",
     design_rationale: sanitizeCopy(s.design_rationale).trim(),
-    color_palette: {
+    color_palette: enforceContrast({
       primary: safeHex(s.color_palette.primary, FALLBACK_PALETTE.primary),
       secondary: safeHex(s.color_palette.secondary, FALLBACK_PALETTE.secondary),
       accent: safeHex(s.color_palette.accent, FALLBACK_PALETTE.accent),
       background: safeHex(s.color_palette.background, FALLBACK_PALETTE.background),
       surface: safeHex(s.color_palette.surface, FALLBACK_PALETTE.surface),
       text: safeHex(s.color_palette.text, FALLBACK_PALETTE.text),
-    },
+    }),
     typography: {
       heading_style: sanitizeCopy(s.typography.heading_style).trim() || "sans, confident",
       body_style: sanitizeCopy(s.typography.body_style).trim() || "sans, readable",
