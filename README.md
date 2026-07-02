@@ -29,11 +29,20 @@ Dubai Lead Gen finds Dubai businesses that already have a strong Google Maps pre
 - Deterministic, transparent 0–100 score computed server-side — same input, same score, with an itemized factor breakdown stored per business. See the [scoring rubric](#opportunity-scoring-rubric).
 - Recomputed on every search, website verification, and analysis run.
 
-### 5. Website generation
-- Generates grounded website copy (headline, about, services, "why choose us", paraphrased testimonials, contact section, SEO title/meta, suggested domain names, color palette, font recommendation, WhatsApp message, booking form fields) from the analysis — with banned-phrase sanitization.
-- Renders a self-contained single-file HTML preview viewable directly in the dashboard, clearly labeled as a draft.
-- Builds a complete Next.js project (multi-file) and packages it as a ZIP download via JSZip.
-- Regeneration is idempotent: calling generate again replaces the stored draft.
+### 5. Website generation (agency-grade pipeline)
+Each website is produced by a 10-step pipeline so different businesses get visibly different, tailored sites — not one template with swapped text:
+1. **Collect business data** (profile, reviews, keywords).
+2. **Optional public research** (`src/lib/research.ts`) — compliant Custom Search snippets from directories, social profiles, news and articles; every source name/URL is stored.
+3. **Review analysis** (existing AI analysis, auto-run when missing).
+4. **Website design brief** (`src/lib/ai/design-brief.ts`) — an AI brand-strategy step: identity, customer persona, brand personality, recommended layout/colors/typography/CTA, sections to include *and avoid*, local SEO angle, trust signals, and per-claim confidence notes (profile / reviews / external / inferred / unknown — "unknown" claims are blocked from the copy).
+5. **Layout selection** (`src/lib/website-builder/layout-select.ts`) — six variants chosen from the business profile, never randomly: premium service, local practical, hospitality, wellness & clinic, creative portfolio, simple local landing (used automatically when data is thin).
+6. **Copywriting** (`src/lib/ai/website-copy.ts`) — brief-driven, layout-aware copy with a hard blocklist of generic AI phrases ("experience excellence", "your trusted partner", "nestled in the heart of", …), plus layout-specific content (menu highlights, signature services, treatments, projects, FAQ).
+7. **Visual style** — a per-site design system (6-color palette, serif/sans typography direction, button shape, section spacing) generated with the brief and validated as data (hex-checked, never prose-sanitized).
+8. **Rendering** (`src/lib/website-builder/layouts.ts`) — six structurally different self-contained HTML layouts (no CDN dependencies) + a matching layout-aware Next.js export project.
+9. **Quality gate** (`src/lib/ai/quality-review.ts`) — an AI creative-director review scored 0–100 combined with deterministic scans (generic phrasing, banned claims, SEO shape); drafts under 80 get one automatic improvement pass with the critique fed back to the copywriter.
+10. **Save** — copy, brief, style, layout, quality report, preview HTML, and export code are all persisted.
+
+The generator page doubles as a sales-demo tool: quality score, design brief, palette, per-claim confidence badges, research sources, and one-click "regenerate design / rewrite copy / change style".
 
 ### 6. Dashboard
 - Sortable, filterable leads table (category, area, website status, lead status, min reviews/rating/score, free-text search) with pagination.
@@ -161,7 +170,7 @@ All error responses are JSON `{ "error": string }` with an appropriate status co
 | GET | `/api/businesses/[id]` | — | `{business: BusinessDetail}` |
 | POST | `/api/businesses/[id]/analyze` | — | `{analysis: AnalysisDto, business: BusinessListItem}` — runs AI review analysis, recomputes the score, upserts the `Analysis` row |
 | POST | `/api/businesses/[id]/verify-website` | — | `VerifyWebsiteResponse` — runs website detection, updates `websiteStatus` (+ `websiteUrl` if found) |
-| POST | `/api/businesses/[id]/generate-website` | `{}` | `{website: WebsiteDto}` — requires an analysis (auto-runs it if missing); generates copy JSON, preview HTML, and Next.js project files; calling again regenerates |
+| POST | `/api/businesses/[id]/generate-website` | `{mode?: "full"\|"copy"\|"style"}` | `{website: WebsiteDto, research: ResearchResult}` — runs the full 10-step pipeline (`full`, default), rewrites copy only (`copy`), or regenerates brief/style/layout keeping the copy (`style`). Auto-runs the analysis if missing |
 | GET | `/api/businesses/[id]/website-preview` | — | `text/html` (stored `previewHtml`); `404` JSON if not generated |
 | GET | `/api/businesses/[id]/export-code` | — | `application/zip` download of the generated Next.js project; `404` if not generated |
 | POST | `/api/businesses/[id]/save-lead` | — | `{lead: LeadStatusDto}` — upserts to `SAVED` (never downgrades `CONTACTED`/`REJECTED`) |

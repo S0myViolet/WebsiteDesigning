@@ -1,22 +1,55 @@
-import { NextResponse } from "next/server";
+// Website generation pipeline (POST /api/businesses/[id]/generate-website):
+//  1. Collect business data          6. Generate website copy
+//  2. Optional public research       7. (visual style comes with the brief)
+//  3. Ensure review analysis         8. Render preview + export code
+//  4. Create the design brief        9. Quality gate (auto-improve below 80)
+//  5. Select the layout variant     10. Save everything
+//
+// Body { mode?: "full" | "copy" | "style" }:
+//  - full  (default): run every step fresh
+//  - copy:  keep the stored brief/style/layout, regenerate copy only
+//  - style: keep the copy, regenerate the brief + visual style + layout
+
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import type { Analysis } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { extractReviewKeywords } from "@/lib/keywords";
+import { researchBusiness } from "@/lib/research";
+import { generateDesignBrief } from "@/lib/ai/design-brief";
 import { generateWebsiteCopy } from "@/lib/ai/website-copy";
+import {
+  QUALITY_THRESHOLD,
+  reviewWebsiteQuality,
+} from "@/lib/ai/quality-review";
 import type { BusinessAnalysisInput } from "@/lib/ai/analysis";
-import { buildPreviewHtml, type PreviewInput } from "@/lib/website-builder/preview-html";
+import { renderWebsite } from "@/lib/website-builder/layouts";
+import {
+  isLayoutType,
+  selectLayout,
+} from "@/lib/website-builder/layout-select";
 import { buildNextJsProject } from "@/lib/website-builder/template";
 import { toJsonField } from "@/lib/utils";
-import { parseJsonField, type AnalysisJson, type ReviewKeyword } from "@/lib/types";
 import {
-  errorResponse,
-  runAnalysis,
-  toWebsiteDto,
-} from "@/lib/serializers";
+  parseJsonField,
+  type AnalysisJson,
+  type DesignBriefJson,
+  type LayoutType,
+  type QualityReportJson,
+  type ResearchResult,
+  type ReviewKeyword,
+  type VisualStyleJson,
+  type WebsiteCopyJson,
+} from "@/lib/types";
+import { errorResponse, runAnalysis, toWebsiteDto } from "@/lib/serializers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const bodySchema = z.object({
+  mode: z.enum(["full", "copy", "style"]).default("full"),
+});
 
 /** Rebuild an AnalysisJson from the Analysis row columns (fallback when rawJson is missing). */
 function analysisJsonFromRow(row: Analysis): AnalysisJson {
@@ -37,13 +70,17 @@ function analysisJsonFromRow(row: Analysis): AnalysisJson {
 }
 
 export async function POST(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const rawBody = await req.json().catch(() => ({}));
+    const parsedBody = bodySchema.safeParse(rawBody ?? {});
+    const mode = parsedBody.success ? parsedBody.data.mode : "full";
+
     const business = await prisma.business.findUnique({
       where: { id: params.id },
-      include: { reviews: true, analysis: true },
+      include: { reviews: true, analysis: true, website: true },
     });
     if (!business) {
       return NextResponse.json({ error: "Business not found" }, { status: 404 });
@@ -56,24 +93,21 @@ export async function POST(
         { status: 400 }
       );
     }
+    const ai = { apiKey: settings.openaiApiKey, model: settings.aiModel };
 
-    // Ensure an analysis exists (auto-run it when missing) and build the
-    // grounding input + AnalysisJson for the copy generator.
+    // ---- Steps 1+3: business data + review analysis (auto-run if missing) --
     let analysisJson: AnalysisJson;
     let input: BusinessAnalysisInput;
-
     if (business.analysis) {
       const row = business.analysis;
       analysisJson =
         parseJsonField<AnalysisJson | null>(row.rawJson, null) ??
         analysisJsonFromRow(row);
-
       const reviewTexts = business.reviews
         .map((r) => r.reviewText)
         .filter((t) => t.trim().length > 0);
       let keywords = parseJsonField<ReviewKeyword[]>(business.keywordsJson, []);
       if (keywords.length === 0) keywords = extractReviewKeywords(reviewTexts);
-
       input = {
         name: business.name,
         category: business.category,
@@ -95,30 +129,132 @@ export async function POST(
       input = run.input;
     }
 
-    const copy = await generateWebsiteCopy(input, analysisJson, {
-      apiKey: settings.openaiApiKey,
-      model: settings.aiModel,
-      websiteStyle: settings.defaultWebsiteStyle,
+    // ---- Step 2: optional external public research (compliant, cached) ----
+    let research = parseJsonField<ResearchResult | null>(
+      business.researchJson,
+      null
+    );
+    if (!research || mode === "full") {
+      research = await researchBusiness(
+        {
+          name: business.name,
+          category: business.category,
+          area: business.area,
+          phone: business.phone,
+        },
+        {
+          searchApiKey: settings.searchApiKey,
+          searchEngineId: settings.searchEngineId,
+        }
+      );
+      await prisma.business.update({
+        where: { id: business.id },
+        data: { researchJson: JSON.stringify(research) },
+      });
+    }
+
+    // ---- Steps 4+7: design brief + visual style (reused in copy mode) -----
+    const stored = business.website;
+    let brief = parseJsonField<DesignBriefJson | null>(
+      stored?.designBrief ?? null,
+      null
+    );
+    let style = parseJsonField<VisualStyleJson | null>(
+      stored?.visualStyle ?? null,
+      null
+    );
+    if (mode !== "copy" || !brief || !style) {
+      const generated = await generateDesignBrief(input, analysisJson, research, ai);
+      brief = generated.brief;
+      style = generated.style;
+    }
+
+    // ---- Step 5: layout selection (profile-driven, brief can recommend) ----
+    let layout: LayoutType;
+    if (mode === "copy" && isLayoutType(stored?.layoutType)) {
+      layout = stored.layoutType;
+    } else {
+      layout = selectLayout({
+        category: business.category,
+        briefRecommendation: brief.recommended_layout_type,
+        storedReviewCount: business.reviews.length,
+        hasPhone: Boolean(business.phone),
+        hasHours: parseJsonField<string[]>(business.openingHours, []).length > 0,
+        hasEditorialSummary: Boolean(business.editorialSummary),
+      });
+    }
+
+    // ---- Step 6: copy (reused in style mode when present) ------------------
+    let copy: WebsiteCopyJson | null =
+      mode === "style"
+        ? parseJsonField<WebsiteCopyJson | null>(stored?.rawJson ?? null, null)
+        : null;
+    if (!copy) {
+      copy = await generateWebsiteCopy(input, analysisJson, {
+        ...ai,
+        websiteStyle: settings.defaultWebsiteStyle,
+        brief,
+        layout,
+      });
+    }
+
+    // ---- Step 9: quality gate with one automatic improvement pass ----------
+    let report: QualityReportJson = await reviewWebsiteQuality(
+      input,
+      copy,
+      brief,
+      layout,
+      ai
+    );
+    if (report.quality_score < QUALITY_THRESHOLD && report.improvement_instructions) {
+      const improved = await generateWebsiteCopy(input, analysisJson, {
+        ...ai,
+        websiteStyle: settings.defaultWebsiteStyle,
+        brief,
+        layout,
+        critique: report.improvement_instructions,
+      });
+      const improvedReport = await reviewWebsiteQuality(
+        input,
+        improved,
+        brief,
+        layout,
+        ai
+      );
+      if (improvedReport.quality_score >= report.quality_score) {
+        copy = improved;
+        report = improvedReport;
+      }
+    }
+
+    // ---- Step 8: render preview + export project ---------------------------
+    const businessBlock = {
+      name: business.name,
+      category: business.category,
+      area: business.area,
+      address: business.address,
+      phone: business.phone,
+      googleMapsUrl: business.googleMapsUrl,
+      openingHours: parseJsonField<string[]>(business.openingHours, []),
+      rating: business.rating,
+      reviewCount: business.reviewCount,
+    };
+    const previewHtml = renderWebsite({
+      business: businessBlock,
+      copy,
+      brief,
+      style,
+      layout,
+    });
+    const projectFiles = buildNextJsProject({
+      business: businessBlock,
+      copy,
+      brief,
+      style,
+      layout,
     });
 
-    const previewInput: PreviewInput = {
-      business: {
-        name: business.name,
-        category: business.category,
-        area: business.area,
-        address: business.address,
-        phone: business.phone,
-        googleMapsUrl: business.googleMapsUrl,
-        openingHours: parseJsonField<string[]>(business.openingHours, []),
-        rating: business.rating,
-        reviewCount: business.reviewCount,
-      },
-      copy,
-    };
-
-    const previewHtml = buildPreviewHtml(previewInput);
-    const projectFiles = buildNextJsProject(previewInput);
-
+    // ---- Step 10: save everything ------------------------------------------
     const data = {
       homepageCopy: JSON.stringify({
         headline: copy.headline,
@@ -131,12 +267,17 @@ export async function POST(
       seoTitle: copy.seo_title,
       seoDescription: copy.seo_meta_description,
       suggestedDomainNames: toJsonField(copy.suggested_domain_names),
-      colorPalette: toJsonField(copy.color_palette),
+      colorPalette: toJsonField(style.color_palette),
       fontRecommendation: copy.font_recommendation,
       generatedCode: JSON.stringify(projectFiles),
       previewHtml,
       previewUrl: `/api/businesses/${business.id}/website-preview`,
       rawJson: JSON.stringify(copy),
+      layoutType: layout,
+      designBrief: JSON.stringify(brief),
+      visualStyle: JSON.stringify(style),
+      qualityScore: report.quality_score,
+      qualityReport: JSON.stringify(report),
     };
 
     const website = await prisma.generatedWebsite.upsert({
@@ -145,7 +286,7 @@ export async function POST(
       update: data,
     });
 
-    return NextResponse.json({ website: toWebsiteDto(website) });
+    return NextResponse.json({ website: toWebsiteDto(website), research });
   } catch (err) {
     return errorResponse(err);
   }

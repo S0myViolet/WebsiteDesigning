@@ -2,10 +2,15 @@
 import type {
   AnalysisJson,
   BusinessListItem,
+  DesignBriefJson,
+  LayoutType,
   LeadStatusValue,
+  QualityReportJson,
+  ResearchResult,
   ReviewKeyword,
   ScoreBreakdown,
   SearchRunSummary,
+  VisualStyleJson,
   WebsiteCopyJson,
   WebsiteStatus,
 } from "@/lib/types";
@@ -52,6 +57,15 @@ export interface WebsiteDto {
   hasPreview: boolean;
   hasCode: boolean;
   copy: WebsiteCopyJson | null;
+  /** Layout variant used to render the site */
+  layoutType: LayoutType | null;
+  /** Strategy document generated before the copy */
+  designBrief: DesignBriefJson | null;
+  /** Per-site visual design system */
+  visualStyle: VisualStyleJson | null;
+  /** Quality-gate score (0-100) and full report */
+  qualityScore: number | null;
+  qualityReport: QualityReportJson | null;
   updatedAt: string;
 }
 
@@ -75,6 +89,8 @@ export interface BusinessDetail extends BusinessListItem {
   analysis: AnalysisDto | null;
   website: WebsiteDto | null;
   lead: LeadStatusDto | null;
+  /** Compliant public-research findings (sources + snippets), when run */
+  research: ResearchResult | null;
 }
 
 export interface BusinessListResponse {

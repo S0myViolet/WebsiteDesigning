@@ -40,6 +40,8 @@ model Business {
   keywordsJson     String?
   // JSON-encoded raw Places API payload (for audit/debug)
   rawPlaceData     String?
+  // JSON-encoded ResearchResult from compliant public-source research
+  researchJson     String?
   lat              Float?
   lng              Float?
   isLikelyChain    Boolean  @default(false)
@@ -122,6 +124,16 @@ model GeneratedWebsite {
   previewUrl           String?
   // Full structured AI copy output (WebsiteCopyJson)
   rawJson              String?
+  // Layout variant used (LayoutType): premium-service | local-practical |
+  // hospitality | wellness-clinic | creative-portfolio | simple-landing
+  layoutType           String?
+  // JSON-encoded DesignBriefJson (strategy generated before the copy)
+  designBrief          String?
+  // JSON-encoded VisualStyleJson (per-site design system)
+  visualStyle          String?
+  // Quality-gate result (0-100) and JSON-encoded QualityReportJson
+  qualityScore         Int?
+  qualityReport        String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

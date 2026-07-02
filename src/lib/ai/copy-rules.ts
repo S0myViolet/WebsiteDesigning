@@ -65,6 +65,45 @@ function escapeRegExp(value: string): string {
  * Case-insensitively replaces banned marketing phrases with neutral wording
  * while preserving all surrounding text. Safe to run on any generated string.
  */
+/**
+ * Overused AI-marketing phrases that make copy feel machine-written. These
+ * are NOT auto-replaced (they are not factual claims) — they are banned in
+ * prompts and scanned for by the quality gate, which triggers a rewrite.
+ */
+export const GENERIC_AI_PHRASES: string[] = [
+  "experience excellence",
+  "your trusted partner",
+  "look no further",
+  "nestled in the heart of",
+  "in the heart of",
+  "we pride ourselves",
+  "unparalleled",
+  "elevate your",
+  "state-of-the-art",
+  "second to none",
+  "your one-stop",
+  "one-stop shop",
+  "committed to excellence",
+  "exceed your expectations",
+  "world-class",
+  "top-notch",
+  "unlock the",
+  "discover the difference",
+  "where quality meets",
+  "crafted with care",
+  "passion for perfection",
+  "journey of",
+  "oasis of",
+  "haven of",
+  "indulge in",
+];
+
+/** Case-insensitive scan for generic AI phrasing; returns the phrases found. */
+export function findGenericPhrases(text: string): string[] {
+  const lower = text.toLowerCase();
+  return GENERIC_AI_PHRASES.filter((p) => lower.includes(p));
+}
+
 export function sanitizeCopy(text: string): string {
   let result = text;
   for (const phrase of BANNED_PHRASES) {

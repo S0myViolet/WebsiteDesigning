@@ -132,6 +132,139 @@ export interface AnalysisJson {
   opportunity_score_reasoning: string;
 }
 
+// ---------------------------------------------------------------------------
+// Website generation pipeline (design brief → layout → copy → style → QA)
+// ---------------------------------------------------------------------------
+
+/** Layout variants the website builder can render. */
+export type LayoutType =
+  | "premium-service"
+  | "local-practical"
+  | "hospitality"
+  | "wellness-clinic"
+  | "creative-portfolio"
+  | "simple-landing";
+
+export const LAYOUT_TYPES: LayoutType[] = [
+  "premium-service",
+  "local-practical",
+  "hospitality",
+  "wellness-clinic",
+  "creative-portfolio",
+  "simple-landing",
+];
+
+export const LAYOUT_TYPE_LABELS: Record<LayoutType, string> = {
+  "premium-service": "Premium service business",
+  "local-practical": "Local practical business",
+  hospitality: "Hospitality",
+  "wellness-clinic": "Wellness & clinic",
+  "creative-portfolio": "Creative portfolio",
+  "simple-landing": "Simple local landing page",
+};
+
+/** Where a claim used on the website comes from. */
+export type ClaimConfidence =
+  | "profile" // confirmed from the Google Business profile
+  | "reviews" // confirmed from customer reviews
+  | "external" // confirmed from an external public source
+  | "inferred" // inferred from category and location
+  | "unknown"; // not supported — must not be claimed
+
+export const CLAIM_CONFIDENCE_LABELS: Record<ClaimConfidence, string> = {
+  profile: "Confirmed from business profile",
+  reviews: "Confirmed from reviews",
+  external: "Confirmed from external public source",
+  inferred: "Inferred from category and location",
+  unknown: "Unknown — not claimed",
+};
+
+export interface ConfidenceNote {
+  claim: string;
+  confidence: ClaimConfidence;
+  /** Source name or URL when available */
+  source: string | null;
+}
+
+/** A public mention found via compliant search APIs (snippets only). */
+export interface ResearchSource {
+  title: string;
+  url: string;
+  snippet: string;
+  sourceType: "directory" | "social" | "news" | "article" | "other";
+  query: string;
+}
+
+export interface ResearchResult {
+  sources: ResearchSource[];
+  searchedAt: string;
+  /** Human-readable note, e.g. "3 public mentions found" or why skipped */
+  note: string;
+}
+
+/** Strategy document generated before any website copy (customization spec). */
+export interface DesignBriefJson {
+  business_identity: string;
+  business_category: string;
+  location_context: string;
+  customer_persona: string;
+  main_customer_need: string;
+  review_based_strengths: string[];
+  review_based_concerns: string[];
+  brand_personality: string;
+  recommended_design_style: string;
+  recommended_layout_type: string;
+  recommended_color_direction: string;
+  recommended_typography_style: string;
+  recommended_cta: string;
+  sections_to_include: string[];
+  sections_to_avoid: string[];
+  local_seo_angle: string;
+  trust_signals: string[];
+  content_confidence_notes: ConfidenceNote[];
+}
+
+/** Visual design system for one generated website. */
+export interface VisualStyleJson {
+  style_name: string;
+  design_rationale: string;
+  color_palette: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    surface: string;
+    text: string;
+  };
+  typography: {
+    heading_style: string;
+    body_style: string;
+    tone: string;
+  };
+  layout_style: string;
+  image_direction: string;
+  button_style: string;
+  section_spacing: string;
+  overall_feel: string;
+}
+
+export interface QualityIssue {
+  area: string;
+  severity: "high" | "medium" | "low";
+  note: string;
+}
+
+/** Output of the pre-save quality gate. */
+export interface QualityReportJson {
+  quality_score: number;
+  feels_specific: boolean;
+  tone_matches_category: boolean;
+  generic_phrases_found: string[];
+  unsupported_claims_found: string[];
+  issues: QualityIssue[];
+  improvement_instructions: string;
+}
+
 /** Structured AI output for website copy generation (spec section 11). */
 export interface WebsiteCopyJson {
   website_name: string;
@@ -156,6 +289,13 @@ export interface WebsiteCopyJson {
   image_recommendations: string[];
   whatsapp_message: string;
   booking_form_fields: string[];
+  /**
+   * Layout-specific feature items: menu highlights (hospitality), signature
+   * services (premium), treatments (wellness), or projects (creative).
+   */
+  highlight_items?: { title: string; description: string }[];
+  /** Optional FAQ entries (wellness/clinic and practical layouts). */
+  faq?: { question: string; answer: string }[];
 }
 
 /** App settings; DB overrides are merged over env values and defaults. */

@@ -21,11 +21,17 @@ import {
   parseJsonField,
   type AnalysisJson,
   type BusinessListItem,
+  type DesignBriefJson,
+  type LayoutType,
   type LeadStatusValue,
+  type QualityReportJson,
+  type ResearchResult,
   type ReviewKeyword,
   type ScoreBreakdown,
+  type VisualStyleJson,
   type WebsiteStatus,
 } from "@/lib/types";
+import { isLayoutType } from "@/lib/website-builder/layout-select";
 import type {
   AnalysisDto,
   ApiError,
@@ -126,6 +132,11 @@ export function toWebsiteDto(w: GeneratedWebsite): WebsiteDto {
     hasPreview: Boolean(w.previewHtml),
     hasCode: Boolean(w.generatedCode),
     copy: parseJsonField<WebsiteDto["copy"]>(w.rawJson, null),
+    layoutType: isLayoutType(w.layoutType) ? (w.layoutType as LayoutType) : null,
+    designBrief: parseJsonField<DesignBriefJson | null>(w.designBrief, null),
+    visualStyle: parseJsonField<VisualStyleJson | null>(w.visualStyle, null),
+    qualityScore: w.qualityScore,
+    qualityReport: parseJsonField<QualityReportJson | null>(w.qualityReport, null),
     updatedAt: w.updatedAt.toISOString(),
   };
 }
@@ -178,6 +189,7 @@ export function toBusinessDetail(b: BusinessWithAllRelations): BusinessDetail {
     analysis: b.analysis ? toAnalysisDto(b.analysis) : null,
     website: b.website ? toWebsiteDto(b.website) : null,
     lead: b.leadStatus ? toLeadStatusDto(b.leadStatus) : null,
+    research: parseJsonField<ResearchResult | null>(b.researchJson, null),
   };
 }
 
