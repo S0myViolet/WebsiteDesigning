@@ -1,0 +1,149 @@
+// Dubai Lead Gen — database schema
+// Default provider is SQLite for a zero-setup MVP. To use PostgreSQL (recommended
+// for production), change provider to "postgresql" and set DATABASE_URL accordingly,
+// then run `npx prisma db push` (or create a migration).
+//
+// Note: JSON-ish payloads (raw place data, keyword lists, generated site files)
+// are stored as JSON-encoded String columns so the schema works on both SQLite
+// and PostgreSQL without changes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Business {
+  id               String   @id @default(cuid())
+  placeId          String   @unique
+  name             String
+  category         String
+  address          String?
+  area             String?
+  phone            String?
+  rating           Float?
+  reviewCount      Int      @default(0)
+  websiteUrl       String?
+  // WebsiteStatus values: NO_WEBSITE_LISTED | LIKELY_MISSING | POSSIBLY_EXISTS | WEBSITE_FOUND | NEEDS_MANUAL_REVIEW | UNKNOWN
+  websiteStatus    String   @default("UNKNOWN")
+  googleMapsUrl    String?
+  // JSON-encoded string[] of weekday opening-hours descriptions
+  openingHours     String?
+  editorialSummary String?
+  // JSON-encoded photo metadata array [{ name, widthPx, heightPx }]
+  photosJson       String?
+  photosCount      Int      @default(0)
+  // JSON-encoded [{ keyword, count }] extracted from review text
+  keywordsJson     String?
+  // JSON-encoded raw Places API payload (for audit/debug)
+  rawPlaceData     String?
+  lat              Float?
+  lng              Float?
+  isLikelyChain    Boolean  @default(false)
+  // Deterministic opportunity score (0-100), recomputed on search/verify/analyze
+  opportunityScore Int?
+  // JSON-encoded ScoreBreakdown { total, factors: [{ label, points }] }
+  scoreBreakdown   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  reviews    Review[]
+  analysis   Analysis?
+  website    GeneratedWebsite?
+  leadStatus LeadStatus?
+
+  @@index([category])
+  @@index([area])
+  @@index([websiteStatus])
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  businessId   String
+  reviewText   String
+  reviewRating Float?
+  reviewDate   String?
+  reviewerName String?
+  createdAt    DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+model Analysis {
+  id                      String   @id @default(cuid())
+  businessId              String   @unique
+  businessSummary         String
+  // JSON-encoded string[]
+  strengths               String?
+  weaknesses              String?
+  targetCustomers         String?
+  services                String?
+  recommendedPositioning  String?
+  seoKeywords             String?
+  localSeoPhrases         String?
+  tone                    String?
+  suggestedCta            String?
+  recommendedSections     String?
+  opportunityScore        Int      @default(0)
+  // JSON-encoded { total, factors: [{ label, points }] }
+  scoreBreakdown          String?
+  opportunityReasoning    String?
+  // Full structured AI output for reproducibility
+  rawJson                 String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model GeneratedWebsite {
+  id                   String   @id @default(cuid())
+  businessId           String   @unique
+  homepageCopy         String?
+  aboutCopy            String?
+  servicesCopy         String?
+  testimonialsCopy     String?
+  seoTitle             String?
+  seoDescription       String?
+  // JSON-encoded string[]
+  suggestedDomainNames String?
+  // JSON-encoded { primary, secondary, accent, background }
+  colorPalette         String?
+  fontRecommendation   String?
+  // JSON-encoded Record<filePath, fileContent> of the generated Next.js project
+  generatedCode        String?
+  // Self-contained single-file HTML draft used for the in-dashboard preview
+  previewHtml          String?
+  previewUrl           String?
+  // Full structured AI copy output (WebsiteCopyJson)
+  rawJson              String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model LeadStatus {
+  id          String    @id @default(cuid())
+  businessId  String    @unique
+  // Status values: NEW | SAVED | CONTACTED | REJECTED
+  status      String    @default("NEW")
+  notes       String?
+  contactedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model Setting {
+  id        Int      @id @default(1)
+  // JSON-encoded AppSettings overrides (merged over env/defaults at read time)
+  json      String
+  updatedAt DateTime @updatedAt
+}
