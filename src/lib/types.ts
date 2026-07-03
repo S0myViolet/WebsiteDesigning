@@ -210,6 +210,8 @@ export interface CreativeDirectionJson {
   visual_cues?: VisualCuesJson | null;
   /** Restaurant/cafe-specific direction layer (hospitality categories only) */
   hospitality?: HospitalityDirectionJson | null;
+  /** Names of the benchmark reference sites consulted (patterns only, never copied) */
+  references_used?: string[];
 }
 
 /** Curated font pairings the visual-style step selects from. */
@@ -425,6 +427,26 @@ export interface VisualCuesJson {
   notes: string;
 }
 
+/**
+ * A reference website used as a design-quality benchmark for a category.
+ * References are NEVER copied — their extracted patterns set the bar the
+ * generated site must reach with the target business's own data.
+ */
+export interface ReferenceSite {
+  id: string;
+  /** Category key it applies to: "hospitality" | "salon" | ... (free-form) */
+  category: string;
+  reference_name: string;
+  url: string;
+  industry: string;
+  notes: string;
+  patterns_to_learn: string[];
+  things_not_to_copy: string[];
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 /** Confidence that an extracted logo really belongs to the business. */
 export type LogoConfidence = "high" | "medium" | "low" | "none";
 
@@ -561,6 +583,8 @@ export interface AppSettings {
   defaultWebsiteStyle: string;
   aiModel: string;
   exportColumns: string[];
+  /** Design-quality benchmark sites per category (never copied) */
+  referenceSites: ReferenceSite[];
 }
 
 /** Filters accepted by GET /api/businesses and GET /api/export/csv. */

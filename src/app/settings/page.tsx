@@ -1,7 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, Check, ShieldCheck } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  ExternalLink,
+  Plus,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,7 +33,7 @@ import {
   DUBAI_AREAS,
   WEBSITE_STYLE_OPTIONS,
 } from "@/lib/constants";
-import type { AppSettings } from "@/lib/types";
+import type { AppSettings, ReferenceSite } from "@/lib/types";
 import { EXPORTABLE_COLUMNS } from "@/lib/csv";
 
 interface MaskedSettings extends AppSettings {
@@ -96,6 +104,16 @@ export default function SettingsPage() {
   // Export
   const [exportCols, setExportCols] = React.useState<string[]>([]);
 
+  // Reference websites
+  const [referenceSites, setReferenceSites] = React.useState<ReferenceSite[]>(
+    []
+  );
+  const [newRefName, setNewRefName] = React.useState("");
+  const [newRefUrl, setNewRefUrl] = React.useState("");
+  const [newRefCategory, setNewRefCategory] = React.useState("hospitality");
+  const [newRefNotes, setNewRefNotes] = React.useState("");
+  const [refError, setRefError] = React.useState<string | null>(null);
+
   const [saving, setSaving] = React.useState(false);
   const [saveMessage, setSaveMessage] = React.useState<string | null>(null);
   const [saveError, setSaveError] = React.useState<string | null>(null);
@@ -122,6 +140,12 @@ export default function SettingsPage() {
     setStyle(data.defaultWebsiteStyle);
     setModel(data.aiModel);
     setExportCols(data.exportColumns);
+    setReferenceSites(data.referenceSites);
+    setNewRefName("");
+    setNewRefUrl("");
+    setNewRefCategory("hospitality");
+    setNewRefNotes("");
+    setRefError(null);
   }, []);
 
   React.useEffect(() => {
@@ -199,7 +223,55 @@ export default function SettingsPage() {
     if (!sameSet(exportCols, current.exportColumns)) {
       payload.exportColumns = exportCols;
     }
+    if (
+      JSON.stringify(referenceSites) !== JSON.stringify(current.referenceSites)
+    ) {
+      payload.referenceSites = referenceSites;
+    }
     return payload;
+  }
+
+  function handleToggleReference(id: string, enabled: boolean) {
+    setReferenceSites((sites) =>
+      sites.map((site) => (site.id === id ? { ...site, enabled } : site))
+    );
+  }
+
+  function handleDeleteReference(id: string) {
+    setReferenceSites((sites) => sites.filter((site) => site.id !== id));
+  }
+
+  function handleAddReference() {
+    setRefError(null);
+    const name = newRefName.trim();
+    const url = newRefUrl.trim();
+    if (!name) {
+      setRefError("Enter a reference name.");
+      return;
+    }
+    if (!/^https?:\/\//.test(url)) {
+      setRefError("URL must start with http:// or https://");
+      return;
+    }
+    const now = new Date().toISOString();
+    const site: ReferenceSite = {
+      id: `ref-${Date.now()}`,
+      category: newRefCategory.trim() || "hospitality",
+      reference_name: name,
+      url,
+      industry: "",
+      notes: newRefNotes.trim(),
+      patterns_to_learn: [],
+      things_not_to_copy: ["Logos, photography, brand names, text"],
+      enabled: true,
+      created_at: now,
+      updated_at: now,
+    };
+    setReferenceSites((sites) => [...sites, site]);
+    setNewRefName("");
+    setNewRefUrl("");
+    setNewRefCategory("hospitality");
+    setNewRefNotes("");
   }
 
   /** Surface invalid form values instead of silently dropping them. */
@@ -506,6 +578,142 @@ export default function SettingsPage() {
             selected={exportCols}
             onChange={setExportCols}
           />
+        </CardContent>
+      </Card>
+
+      {/* Reference websites */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Reference websites</CardTitle>
+          <CardDescription>
+            Design-quality benchmarks per category. Used during generation as
+            the bar to reach — patterns only, never copied.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {referenceSites.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No reference websites configured.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {referenceSites.map((site) => (
+                <li
+                  key={site.id}
+                  className="flex flex-wrap items-start gap-3 py-3 first:pt-0 last:pb-0"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        href={site.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-w-0 items-center gap-1 text-sm font-medium underline-offset-4 hover:underline"
+                      >
+                        <span className="truncate">{site.reference_name}</span>
+                        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      </a>
+                      <Badge variant="secondary" className="font-normal">
+                        {site.category}
+                      </Badge>
+                      {site.industry && (
+                        <Badge variant="outline" className="font-normal">
+                          {site.industry}
+                        </Badge>
+                      )}
+                    </div>
+                    {site.notes && (
+                      <p className="text-xs text-muted-foreground">
+                        {site.notes}
+                      </p>
+                    )}
+                    {site.patterns_to_learn.length > 0 && (
+                      <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+                        {site.patterns_to_learn.map((pattern, i) => (
+                          <li key={`${pattern}-${i}`}>{pattern}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={site.enabled}
+                        onChange={(event) =>
+                          handleToggleReference(site.id, event.target.checked)
+                        }
+                      />
+                      Enabled
+                    </label>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Delete ${site.reference_name}`}
+                      onClick={() => handleDeleteReference(site.id)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="space-y-3 border-t border-border pt-4">
+            <p className="text-sm font-medium">Add reference</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="ref-name">Name</Label>
+                <Input
+                  id="ref-name"
+                  value={newRefName}
+                  onChange={(event) => setNewRefName(event.target.value)}
+                  placeholder="Reference site name"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ref-url">URL</Label>
+                <Input
+                  id="ref-url"
+                  value={newRefUrl}
+                  onChange={(event) => setNewRefUrl(event.target.value)}
+                  placeholder="https://example.com"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ref-category">Category</Label>
+                <Input
+                  id="ref-category"
+                  value={newRefCategory}
+                  onChange={(event) => setNewRefCategory(event.target.value)}
+                  placeholder="hospitality"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ref-notes">Notes</Label>
+                <Input
+                  id="ref-notes"
+                  value={newRefNotes}
+                  onChange={(event) => setNewRefNotes(event.target.value)}
+                  placeholder="Why this site sets the bar"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={handleAddReference}>
+                <Plus />
+                Add
+              </Button>
+              {refError && (
+                <span className="inline-flex items-center gap-1 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0" /> {refError}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New references apply after saving the settings.
+            </p>
+          </div>
         </CardContent>
       </Card>
 

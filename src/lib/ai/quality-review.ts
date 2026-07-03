@@ -7,6 +7,7 @@ import { z } from "zod";
 import type {
   BrandIdentityJson,
   CreativeDirectionJson,
+  ReferenceSite,
   DesignBriefJson,
   LayoutType,
   QualityIssue,
@@ -15,7 +16,11 @@ import type {
   WebsiteCopyJson,
 } from "@/lib/types";
 import { chatJson } from "@/lib/ai/openai-client";
-import { BANNED_PHRASES, findGenericPhrases } from "@/lib/ai/copy-rules";
+import {
+  BANNED_PHRASES,
+  findGenericPhrases,
+  findGenericSectionTitles,
+} from "@/lib/ai/copy-rules";
 import { isHospitalityCategory } from "@/lib/constants";
 import type { BusinessAnalysisInput } from "@/lib/ai/analysis";
 
@@ -135,6 +140,7 @@ function buildUserPrompt(
     style?: VisualStyleJson | null;
     direction?: CreativeDirectionJson | null;
     brand?: BrandIdentityJson | null;
+    benchmarks?: ReferenceSite[];
   }
 ): string {
   const reviewLines = input.reviews
@@ -143,11 +149,17 @@ function buildUserPrompt(
     .join("\n");
   const cues = extras?.direction?.visual_cues;
   const brand = extras?.brand;
+  const benchmarks = extras?.benchmarks ?? [];
+  const benchmarkLine = benchmarks.length
+    ? `- QUALITY BENCHMARK (embarrassment test): judge this draft against the standard of real premium sites like ${benchmarks
+        .map((r) => r.reference_name)
+        .join(", ")} — reservation-forward, dense with substance, atmospheric, menu presented with pride. If this draft would look embarrassing next to them (sparse, generic cards, template section titles, no atmosphere), it FAILS. It must beat a basic Wix/Squarespace template, not tie with it.\n`
+    : "";
   const brandLine = brand && (brand.logo_found || brand.brand_colors.length > 0)
     ? `- REAL brand identity available (${brand.logo_found ? `logo ${brand.logo_confidence} confidence from ${brand.logo_source_type}` : "colors only"}): brand colors ${brand.brand_colors.join(", ") || "n/a"}, accents ${brand.accent_colors.join(", ") || "n/a"}. The palette must visibly connect to these — judge by HUE FAMILY and overall feel, not exact hex equality: palette colors are legibility-adjusted (darkened/lightened) versions of the brand colors, which is correct. Flag brand_palette_matches_sources=false only when the palette is in a genuinely different color family than the brand. The logo (when found at high/medium confidence) is rendered in the site header and footer automatically.\n`
     : "";
   const designBlock = extras?.style
-    ? `\nDESIGN TO JUDGE FOR FIT:\n- Concept: ${extras.direction?.creative_concept ?? "(none)"}\n- Palette: primary ${extras.style.color_palette.primary}, secondary ${extras.style.color_palette.secondary}, accent ${extras.style.color_palette.accent}, background ${extras.style.color_palette.background}\n${brandLine}${cues ? `- The venue's REAL visual cues (from its public photos): dominant ${cues.dominant_colors.join(", ") || "n/a"}; accents ${cues.accent_colors.join(", ") || "n/a"}; ${cues.lighting_mood}; ${cues.material_feel}; ${cues.casual_or_refined}. Judge whether the palette and mood match the real venue — mismatch is a high-severity issue.\n` : ""}`
+    ? `\nDESIGN TO JUDGE FOR FIT:\n- Concept: ${extras.direction?.creative_concept ?? "(none)"}\n- Palette: primary ${extras.style.color_palette.primary}, secondary ${extras.style.color_palette.secondary}, accent ${extras.style.color_palette.accent}, background ${extras.style.color_palette.background}\n${benchmarkLine}${brandLine}${cues ? `- The venue's REAL visual cues (from its public photos): dominant ${cues.dominant_colors.join(", ") || "n/a"}; accents ${cues.accent_colors.join(", ") || "n/a"}; ${cues.lighting_mood}; ${cues.material_feel}; ${cues.casual_or_refined}. Judge whether the palette and mood match the real venue — mismatch is a high-severity issue.\n` : ""}`
     : "";
   return `BUSINESS: ${input.name} — ${input.category} in ${input.area ?? "Dubai"}. Layout variant: ${layout}.
 Full address (ground truth for location wording — any neighbourhood named in it is correct to mention): ${input.address ?? "(unknown)"}
@@ -227,6 +239,19 @@ function deterministicChecks(
     deduction += 5;
   }
 
+  const sectionTitles = [
+    ...(copy.feature_sections ?? []).map((f) => f.title),
+  ];
+  const genericTitles = findGenericSectionTitles(sectionTitles);
+  if (genericTitles.length > 0) {
+    issues.push({
+      area: "sections",
+      severity: "high",
+      note: `Template-grade section titles found: ${genericTitles.join(", ")} — use editorial, business-specific titles ("What people come back for", "Order around the table", ...).`,
+    });
+    deduction += genericTitles.length * 5;
+  }
+
   const minFeatures = isHospitalityCategory(input.category) ? 3 : 2;
   const featureCount = (copy.feature_sections ?? []).filter(
     (s) => s.items.length >= 2
@@ -258,6 +283,7 @@ export async function reviewWebsiteQuality(
     style?: VisualStyleJson | null;
     direction?: CreativeDirectionJson | null;
     brand?: BrandIdentityJson | null;
+    benchmarks?: ReferenceSite[];
   }
 ): Promise<QualityReportJson> {
   const raw = await chatJson<unknown>({
@@ -330,6 +356,12 @@ export async function reviewWebsiteQuality(
     });
   }
   const brand = extras?.brand;
+  const benchmarks = extras?.benchmarks ?? [];
+  const benchmarkLine = benchmarks.length
+    ? `- QUALITY BENCHMARK (embarrassment test): judge this draft against the standard of real premium sites like ${benchmarks
+        .map((r) => r.reference_name)
+        .join(", ")} — reservation-forward, dense with substance, atmospheric, menu presented with pride. If this draft would look embarrassing next to them (sparse, generic cards, template section titles, no atmosphere), it FAILS. It must beat a basic Wix/Squarespace template, not tie with it.\n`
+    : "";
   const brandCuesAvailable = Boolean(
     brand && (brand.logo_found || brand.brand_colors.length > 0)
   );

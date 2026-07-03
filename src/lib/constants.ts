@@ -1,5 +1,7 @@
 // Dubai areas, business categories, and heuristics shared across modules.
 
+import type { ReferenceSite } from "@/lib/types";
+
 export interface DubaiArea {
   name: string;
   lat: number;
@@ -223,6 +225,132 @@ export const WEBSITE_STYLE_OPTIONS = [
 
 export const AI_MODEL_OPTIONS = ["gpt-4o", "gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"] as const;
 
+/**
+ * Default design-benchmark references (hospitality). Used ONLY as a quality
+ * bar during generation — patterns, not content. Managed on the Settings page.
+ */
+export const DEFAULT_REFERENCE_SITES: ReferenceSite[] = [
+  {
+    id: "ref-takahisa",
+    category: "hospitality",
+    reference_name: "TakaHisa",
+    url: "https://takahisa.ae/",
+    industry: "Premium Japanese omakase, Dubai",
+    notes: "Premium dining feel: luxury spacing, dark refined mood, elegant visuals.",
+    patterns_to_learn: [
+      "Reservation-first navigation: Book Now, phone, and reservations email visible without scrolling",
+      "Dedicated atmosphere sections (interiors, chefs) that sell the room, not just the food",
+      "Dark, refined surfaces with restrained typography for high-end positioning",
+    ],
+    things_not_to_copy: ["Logos, photography, brand names, text"],
+    enabled: true,
+    created_at: "2026-07-03T00:00:00.000Z",
+    updated_at: "2026-07-03T00:00:00.000Z",
+  },
+  {
+    id: "ref-occo",
+    category: "hospitality",
+    reference_name: "OCCO Restaurant",
+    url: "https://www.occorestaurant.ae/",
+    industry: "Polished contemporary dining, Dubai",
+    notes: "Polished identity and refined hospitality section flow.",
+    patterns_to_learn: [
+      "Location-forward blocks (per-area cards with their own booking action)",
+      "Confident sparse hero with one clear promise and BOOK TABLE action",
+      "Consistent visual identity carried through every section",
+    ],
+    things_not_to_copy: ["Logos, photography, brand names, text"],
+    enabled: true,
+    created_at: "2026-07-03T00:00:00.000Z",
+    updated_at: "2026-07-03T00:00:00.000Z",
+  },
+  {
+    id: "ref-terra-italia",
+    category: "hospitality",
+    reference_name: "Terra Italia",
+    url: "https://terraitaliadubai.com/",
+    industry: "Warm Italian restaurant, Dubai",
+    notes: "Warm, food-led design with visual storytelling.",
+    patterns_to_learn: [
+      "Food-led sections with appetite-driven language (aromatic taste, delicious foods) instead of service talk",
+      "Warm color temperature and generous food imagery areas",
+      "Practical blocks that answer visit questions: hours, location, private events",
+    ],
+    things_not_to_copy: ["Logos, photography, brand names, text"],
+    enabled: true,
+    created_at: "2026-07-03T00:00:00.000Z",
+    updated_at: "2026-07-03T00:00:00.000Z",
+  },
+  {
+    id: "ref-paus",
+    category: "hospitality",
+    reference_name: "PausClub",
+    url: "https://pausclub.com/",
+    industry: "Lifestyle hospitality club, Dubai",
+    notes: "Community atmosphere; warm modern branding; lifestyle energy.",
+    patterns_to_learn: [
+      "Pillar-based storytelling (short bold themes) instead of generic feature cards",
+      "A lived-in community feel: what happens here weekly, not just what is sold",
+      "Warm modern branding with personality in microcopy",
+    ],
+    things_not_to_copy: ["Logos, photography, brand names, text"],
+    enabled: true,
+    created_at: "2026-07-03T00:00:00.000Z",
+    updated_at: "2026-07-03T00:00:00.000Z",
+  },
+  {
+    id: "ref-woohoo",
+    category: "hospitality",
+    reference_name: "woo-hoo!",
+    url: "https://woo-hoo.ae/",
+    industry: "Bold experience venue, Dubai",
+    notes: "Bold concept with strong personality and modern Dubai energy.",
+    patterns_to_learn: [
+      "A hero that sells the experience in one energetic sentence with an immediate ticket/booking action",
+      "Named ticket/visit options presented as clear cards with prices of entry actions (not vague CTAs)",
+      "Reviews and FAQs woven into the page as first-class sections",
+    ],
+    things_not_to_copy: ["Logos, photography, brand names, text"],
+    enabled: true,
+    created_at: "2026-07-03T00:00:00.000Z",
+    updated_at: "2026-07-03T00:00:00.000Z",
+  },
+  {
+    id: "ref-kokoro",
+    category: "hospitality",
+    reference_name: "Kokoro Hand Roll Bar",
+    url: "https://eatkokoro.xyz/",
+    industry: "Focused single-concept food brand, Dubai",
+    notes: "Simple but distinctive food brand; focused identity.",
+    patterns_to_learn: [
+      "Menu presented as proud cuisine categories (HANDROLLS, CRUDO, NIGIRI) — not a generic services list",
+      "A short founding story and faces behind the food to build character",
+      "Location block with direct GET DIRECTIONS action per venue",
+    ],
+    things_not_to_copy: ["Logos, photography, brand names, text"],
+    enabled: true,
+    created_at: "2026-07-03T00:00:00.000Z",
+    updated_at: "2026-07-03T00:00:00.000Z",
+  },
+  {
+    id: "ref-bounce",
+    category: "hospitality",
+    reference_name: "BOUNCE Al Quoz",
+    url: "https://bounce.ae/locations/alquoz-dubai/",
+    industry: "Experience venue landing page, Dubai",
+    notes: "Experience-based landing structure: bold sections, clear CTAs, location focus.",
+    patterns_to_learn: [
+      "Location page anatomy: hero promise, location and timings block, offers, then deeper content",
+      "Energetic offer cards with concrete names instead of abstract benefits",
+      "Repeated, unmissable primary action throughout the scroll",
+    ],
+    things_not_to_copy: ["Logos, photography, brand names, text"],
+    enabled: true,
+    created_at: "2026-07-03T00:00:00.000Z",
+    updated_at: "2026-07-03T00:00:00.000Z",
+  },
+];
+
 export const DEFAULT_SETTINGS = {
   defaultAreas: DUBAI_AREAS.map((a) => a.name),
   defaultCategories: [] as string[],
@@ -249,4 +377,5 @@ export const DEFAULT_SETTINGS = {
     "businessSummary",
     "leadStatus",
   ],
+  referenceSites: DEFAULT_REFERENCE_SITES,
 };

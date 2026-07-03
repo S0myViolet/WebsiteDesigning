@@ -7,6 +7,20 @@ import { errorResponse } from "@/lib/serializers";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const referenceSiteSchema = z.object({
+  id: z.string().min(1),
+  category: z.string().min(1),
+  reference_name: z.string().min(1),
+  url: z.string().url(),
+  industry: z.string(),
+  notes: z.string(),
+  patterns_to_learn: z.array(z.string()),
+  things_not_to_copy: z.array(z.string()),
+  enabled: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
 const settingsSchema = z
   .object({
     googleMapsApiKey: z.string(),
@@ -23,6 +37,7 @@ const settingsSchema = z
     defaultWebsiteStyle: z.string(),
     aiModel: z.string(),
     exportColumns: z.array(z.string()),
+    referenceSites: z.array(referenceSiteSchema).max(50),
   })
   .partial();
 

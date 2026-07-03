@@ -13,7 +13,7 @@ import type {
   VisualCuesJson,
   VisualStyleJson,
 } from "@/lib/types";
-import type { BrandIdentityJson } from "@/lib/types";
+import type { BrandIdentityJson, ReferenceSite } from "@/lib/types";
 import { LAYOUT_TYPES } from "@/lib/types";
 import { chatJson } from "@/lib/ai/openai-client";
 import { COPY_RULES, sanitizeCopy } from "@/lib/ai/copy-rules";
@@ -440,6 +440,8 @@ export async function generateDesignBrief(
     hospitality?: boolean;
     /** Extracted logo / brand identity — brand colors anchor the palette */
     brand?: BrandIdentityJson | null;
+    /** Category benchmark references — quality bar only, never copied */
+    benchmarks?: ReferenceSite[];
   }
 ): Promise<{
   direction: CreativeDirectionJson;
@@ -472,6 +474,16 @@ REAL BRAND IDENTITY extracted from the business's own signage/menu/photos (${bra
 - Background recommendation: ${brand.background_recommendation || "n/a"}
 These are the business's ACTUAL brand colors — visual_style.color_palette must be built around them (primary/accent anchored to the brand colors, adjusted only for legibility). The design system should feel built around this brand mark, not merely decorated with it.`
       : "";
+  const benchmarks = opts.benchmarks ?? [];
+  const benchmarkBlock = benchmarks.length
+    ? `
+
+DESIGN QUALITY BENCHMARKS — the bar this site must reach. These are patterns from real premium ${benchmarks[0].category} websites. NEVER copy their names, text, layouts, or assets; learn the level:
+${benchmarks
+  .map((r) => `- ${r.reference_name} (${r.industry}): ${r.patterns_to_learn.join("; ")}`)
+  .join("\n")}
+Your direction must produce a site that would not look embarrassing next to these: dense with real substance, atmospheric, reservation/action-forward — never a sparse generic landing page. Prefer "balanced" or "dense" visual density for hospitality (never "airy" emptiness), and section ideas with personality (what regulars order, the room and its mood, cuisine categories named with pride) over corporate blocks.`
+    : "";
   const hospitalityBlock = opts.hospitality
     ? `
 
@@ -498,6 +510,7 @@ Every field grounded in the reviews/photos — a reviewer should recognize the p
     buildUserPrompt(input, analysis, research) +
     cuesBlock +
     brandBlock +
+    benchmarkBlock +
     hospitalityBlock +
     (opts.critique
       ? `

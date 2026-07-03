@@ -231,6 +231,13 @@ export async function POST(
     // previous run, then to tasteful inference inside the design prompt.
     const stored = business.website;
     const hospitality = isHospitalityCategory(business.category);
+    // Category benchmark references (Settings-managed): quality bar only.
+    const benchmarks = (settings.referenceSites ?? []).filter(
+      (r) =>
+        r.enabled &&
+        ((r.category === "hospitality" && hospitality) ||
+          business.category.toLowerCase().includes(r.category.toLowerCase()))
+    );
     let direction = parseJsonField<CreativeDirectionJson | null>(
       stored?.creativeDirection ?? null,
       null
@@ -321,6 +328,7 @@ export async function POST(
         visualCues,
         hospitality,
         brand,
+        benchmarks,
       });
       direction = generated.direction;
       designSystem = generated.system;
@@ -473,6 +481,7 @@ export async function POST(
           visualCues,
           hospitality,
           brand,
+          benchmarks,
         });
         direction = regenerated.direction;
         designSystem = regenerated.system;
@@ -518,6 +527,7 @@ export async function POST(
         style,
         direction,
         brand,
+        benchmarks,
       });
 
       if (!best || report.quality_score > best.score) {
@@ -559,6 +569,7 @@ export async function POST(
     // Everything below (uniqueness, render, save) uses the BEST attempt.
     copy = best.copy;
     direction = best.direction;
+    direction.references_used = benchmarks.map((r) => r.reference_name);
     designSystem = best.designSystem;
     brief = best.brief;
     style = best.style;

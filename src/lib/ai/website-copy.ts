@@ -36,7 +36,7 @@ const LAYOUT_FEATURE_HINTS: Record<LayoutType, string> = {
   "local-practical":
     'feature_sections: 2-3 of ["checklist" (what every job/service includes, 4-6 concrete items), "service-area" (areas served / why the location is convenient), "steps" (how a job goes from call to done)].',
   hospitality:
-    'feature_sections: 3 of ["highlights" (menu highlights / what regulars order, grounded in reviews), "perfect-for" (occasions and visitors this place suits: breakfast meetings, family dinners, quick karak stops — only themes the reviews support), "steps" (how a visit works / how to get a table) or "service-area" (visit timing: when to come, from hours + review patterns)]. Restaurants need at least 3 substantial modules.',
+    'feature_sections: 3 of ["highlights", "perfect-for", "steps", "service-area"] — but TITLE them like a real restaurant site, never like a template. BANNED titles: "Perfect For", "Visit Timing", "Why Choose Us", "Our Services", "About Us". Use editorial titles grounded in the reviews instead, e.g. "What people come back for", "Order around the table", "Review-backed favorites", "Lunch, dinner, and late-night plans", "A table for business lunches and easy dinners", "Before you visit", "Signature dishes", or named cuisine categories. Each module needs 4+ concrete items where the data allows — dense and specific, no filler. Restaurants need at least 3 substantial modules.',
   "wellness-clinic":
     'feature_sections: 2 of ["steps" (what to expect on a visit, 3-4 steps), "reassurance" (patient/first-visit reassurance grounded in review praise)].',
   "creative-portfolio":

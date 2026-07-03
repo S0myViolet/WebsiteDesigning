@@ -34,6 +34,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { QualityScoreBadge } from "@/components/generate/quality-badge";
 import {
+  BenchmarksCard,
   BrandIdentityCard,
   CreativeDirectionCard,
   DesignBriefCard,
@@ -723,6 +724,9 @@ export default function GenerateWebsitePage() {
           <DesignBriefCard brief={website.designBrief} />
           <VisualStyleCard style={website.visualStyle} />
           <DesignSystemCard system={website.designSystem} />
+          <BenchmarksCard
+            referencesUsed={website.creativeDirection?.references_used}
+          />
           <BrandIdentityCard
             brand={business.brandIdentity}
             businessId={id}

@@ -128,6 +128,32 @@ export const GENERIC_AI_PHRASES: string[] = [
   "attentive service and beautiful ambiance",
 ];
 
+/**
+ * Section titles that make a page read like a default template. The copy
+ * prompt bans them and the quality gate deducts for each one found; the
+ * generator must use editorial, business-specific titles instead
+ * ("What people come back for", "Order around the table", ...).
+ */
+export const GENERIC_SECTION_TITLES: string[] = [
+  "perfect for",
+  "visit timing",
+  "why choose us",
+  "our services",
+  "our features",
+  "about us",
+  "exceptional service",
+  "premium experience",
+  "what we offer",
+  "services",
+];
+
+/** Case-insensitive scan of section titles; returns the generic ones found. */
+export function findGenericSectionTitles(titles: string[]): string[] {
+  return titles
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => GENERIC_SECTION_TITLES.includes(t));
+}
+
 /** Case-insensitive scan for generic AI phrasing; returns the phrases found. */
 export function findGenericPhrases(text: string): string[] {
   const lower = text.toLowerCase();

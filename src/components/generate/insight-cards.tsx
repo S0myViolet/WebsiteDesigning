@@ -167,6 +167,35 @@ export function CreativeDirectionCard({
 }
 
 // ---------------------------------------------------------------------------
+// 0b. Design benchmarks
+// ---------------------------------------------------------------------------
+
+export function BenchmarksCard({
+  referencesUsed,
+}: {
+  referencesUsed?: string[] | null;
+}) {
+  if (!referencesUsed || referencesUsed.length === 0) return null;
+  return (
+    <InsightCard
+      title="Design benchmarks"
+      description="Quality bar for this design — patterns only, nothing copied"
+    >
+      <ul className="list-disc space-y-1 pl-5">
+        {referencesUsed.map((name, i) => (
+          <li key={`${name}-${i}`}>{name}</li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        The design above was generated from this business&apos;s own data
+        (reviews, photos, logo, brand colors). References set the quality
+        standard; no text, layout, or assets were copied.
+      </p>
+    </InsightCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // 1. Quality review
 // ---------------------------------------------------------------------------
 
