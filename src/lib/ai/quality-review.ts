@@ -5,14 +5,17 @@
 
 import { z } from "zod";
 import type {
+  CreativeDirectionJson,
   DesignBriefJson,
   LayoutType,
   QualityIssue,
   QualityReportJson,
+  VisualStyleJson,
   WebsiteCopyJson,
 } from "@/lib/types";
 import { chatJson } from "@/lib/ai/openai-client";
 import { BANNED_PHRASES, findGenericPhrases } from "@/lib/ai/copy-rules";
+import { isHospitalityCategory } from "@/lib/constants";
 import type { BusinessAnalysisInput } from "@/lib/ai/analysis";
 
 export const QUALITY_THRESHOLD = 90;
@@ -26,8 +29,10 @@ export const QUALITY_THRESHOLD = 90;
  */
 export const QUALITY_GATE = {
   minimumPassingScore: QUALITY_THRESHOLD,
-  targetScore: 92,
-  maximumAttempts: 5,
+  /** Keep iterating below this even when technically passing, if issues remain */
+  targetScore: 93,
+  strongScore: 95,
+  maximumAttempts: 8,
   hardFailureBelow: 85,
 } as const;
 
@@ -86,10 +91,11 @@ Score the draft 0-100 against this checklist:
 - SEO title and meta description are specific (name + trade + area), not generic.
 - Testimonials are paraphrased themes, never verbatim quotes or reviewer names.
 - Nothing implies this is the official website of the business.
+- For restaurants/cafes/hospitality: ask "does this actually FEEL like this specific place?" The copy must reflect what reviewers actually order and when they visit; the palette must match the venue's real vibe (visual cues provided when available — a warm evening grill spot must not get a pastel daytime palette, and vice versa). At least 3 restaurant-specific modules (popular dishes, visit timing, what regulars order, perfect-for, reservation flow). Any-restaurant copy fails.
 
 Rate across TEN dimensions and weigh them equally: originality, premium feel, business specificity, typography-support (does the copy give the type system something to work with: short punchy heads, editorial lines), layout sophistication (do the sections give the layout variety: feature modules, not just lists), visual rhythm (does section content alternate in kind), CTA quality (right action + microcopy), mobile quality (short scannable blocks), trust-building (grounded reassurance), non-generic feel.
 
-Scoring guide: 94+ = agency-grade, would impress a real owner as-is; 90-93 = client-ready; 80-89 = good but still reads assembled in places — FAIL; 60-79 = templated; below 60 = filler or unsupported claims. Be harsh: "merely good enough" must fail. Reserve 94+ for genuinely sharp work.
+Scoring guide: 94+ = agency-grade, would impress a real owner as-is; 90-93 = client-ready; 80-89 = a real defect remains; 60-79 = templated; below 60 = filler or unsupported claims. Be harsh about real defects, but score CONSISTENTLY with your own findings: if all four core checks pass (specific, tone, strong hero, business-specific features), there are no unsupported claims, no generic marketing phrases, and every remaining issue is medium/low polish, the score MUST be 90 or higher. Reserve 80-89 for drafts with at least one high-severity issue or a failed core check. Do not park a defect-free draft at 88 out of general strictness — name the high-severity defect or score it 90+.
 
 design_notes: 2-4 short observations about what makes (or would make) this feel custom-designed rather than generated.
 priority_fixes: the 2-4 highest-impact changes, ordered, each one concrete and actionable ("Replace the headline with ...", "Add a what-regulars-order section using ..."). Empty array only when the score is 92+.
@@ -115,20 +121,39 @@ function buildUserPrompt(
   input: BusinessAnalysisInput,
   copy: WebsiteCopyJson,
   brief: DesignBriefJson | null,
-  layout: LayoutType
+  layout: LayoutType,
+  extras?: {
+    style?: VisualStyleJson | null;
+    direction?: CreativeDirectionJson | null;
+  }
 ): string {
   const reviewLines = input.reviews
     .slice(0, 10)
     .map((r) => `- (${r.rating ?? "?"} stars) ${r.text.slice(0, 250)}`)
     .join("\n");
+  const cues = extras?.direction?.visual_cues;
+  const designBlock = extras?.style
+    ? `\nDESIGN TO JUDGE FOR FIT:\n- Concept: ${extras.direction?.creative_concept ?? "(none)"}\n- Palette: primary ${extras.style.color_palette.primary}, secondary ${extras.style.color_palette.secondary}, accent ${extras.style.color_palette.accent}, background ${extras.style.color_palette.background}\n${cues ? `- The venue's REAL visual cues (from its public photos): dominant ${cues.dominant_colors.join(", ") || "n/a"}; accents ${cues.accent_colors.join(", ") || "n/a"}; ${cues.lighting_mood}; ${cues.material_feel}; ${cues.casual_or_refined}. Judge whether the palette and mood match the real venue — mismatch is a high-severity issue.\n` : ""}`
+    : "";
   return `BUSINESS: ${input.name} — ${input.category} in ${input.area ?? "Dubai"}. Layout variant: ${layout}.
+Full address (ground truth for location wording — any neighbourhood named in it is correct to mention): ${input.address ?? "(unknown)"}
 
 SOURCE REVIEWS (ground truth):
 ${reviewLines || "(none)"}
-
+${designBlock}
 ${brief ? `DESIGN BRIEF DIRECTION:\n- Personality: ${brief.brand_personality}\n- Persona: ${brief.customer_persona}\n- CTA: ${brief.recommended_cta}\n- Claims marked unknown (must not appear): ${brief.content_confidence_notes.filter((n) => n.confidence === "unknown").map((n) => n.claim).join("; ") || "none"}\n` : ""}
-DRAFT WEBSITE COPY TO REVIEW:
-${JSON.stringify(copy, null, 2)}`;
+DRAFT WEBSITE COPY TO REVIEW (the authoritative palette is the DESIGN one above — this JSON intentionally excludes non-rendered decorative fields):
+${JSON.stringify(copyForReview(copy), null, 2)}`;
+}
+
+/**
+ * The copywriter's own color_palette/font fields are legacy suggestions that
+ * are NOT what gets rendered (the visual-style palette is). Hide them from
+ * the auditor so it never flags a phantom palette mismatch.
+ */
+function copyForReview(copy: WebsiteCopyJson): Omit<WebsiteCopyJson, "color_palette" | "font_recommendation" | "suggested_domain_names"> {
+  const { color_palette: _palette, font_recommendation: _font, suggested_domain_names: _domains, ...rest } = copy;
+  return rest;
 }
 
 /**
@@ -138,7 +163,13 @@ ${JSON.stringify(copy, null, 2)}`;
 function deterministicChecks(
   input: BusinessAnalysisInput,
   copy: WebsiteCopyJson
-): { issues: QualityIssue[]; genericFound: string[]; bannedFound: string[]; deduction: number } {
+): {
+  issues: QualityIssue[];
+  genericFound: string[];
+  bannedFound: string[];
+  deduction: number;
+  minFeatures: number;
+} {
   const text = copyToPlainText(copy);
   const lower = text.toLowerCase();
   const issues: QualityIssue[] = [];
@@ -182,19 +213,20 @@ function deterministicChecks(
     deduction += 5;
   }
 
+  const minFeatures = isHospitalityCategory(input.category) ? 3 : 2;
   const featureCount = (copy.feature_sections ?? []).filter(
     (s) => s.items.length >= 2
   ).length;
-  if (featureCount < 2) {
+  if (featureCount < minFeatures) {
     issues.push({
       area: "design",
       severity: "high",
-      note: `Only ${featureCount} substantial business-specific feature section(s) — the design standard requires at least 2 (checklist, steps, reassurance, highlights, perfect-for, or service-area).`,
+      note: `Only ${featureCount} substantial business-specific feature section(s) — this category requires at least ${minFeatures} (popular dishes/highlights, visit timing, what-to-expect steps, perfect-for, checklist, reassurance, or service-area).`,
     });
     deduction += 10;
   }
 
-  return { issues, genericFound, bannedFound, deduction };
+  return { issues, genericFound, bannedFound, deduction, minFeatures };
 }
 
 /**
@@ -207,13 +239,17 @@ export async function reviewWebsiteQuality(
   copy: WebsiteCopyJson,
   brief: DesignBriefJson | null,
   layout: LayoutType,
-  opts: { apiKey: string; model: string }
+  opts: { apiKey: string; model: string },
+  extras?: {
+    style?: VisualStyleJson | null;
+    direction?: CreativeDirectionJson | null;
+  }
 ): Promise<QualityReportJson> {
   const raw = await chatJson<unknown>({
     apiKey: opts.apiKey,
     model: opts.model,
     system: buildSystemPrompt(),
-    user: buildUserPrompt(input, copy, brief, layout),
+    user: buildUserPrompt(input, copy, brief, layout, extras),
     temperature: 0.2,
   });
 
@@ -251,10 +287,10 @@ export async function reviewWebsiteQuality(
     (s) => s.items.length >= 2
   ).length;
   const caps: { cap: number; note: string }[] = [];
-  if (featureCount < 2) {
+  if (featureCount < det.minFeatures) {
     caps.push({
       cap: QUALITY_GATE.minimumPassingScore - 1,
-      note: "fewer than 2 business-specific feature sections",
+      note: `fewer than ${det.minFeatures} business-specific feature sections`,
     });
   }
   if (ai.hero_has_strong_idea === false) {

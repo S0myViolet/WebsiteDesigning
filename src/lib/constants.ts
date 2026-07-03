@@ -66,6 +66,18 @@ export const HIGH_VALUE_CATEGORY_LABELS = CATEGORIES.filter(
 ).map((c) => c.label);
 
 /**
+ * Hospitality businesses (restaurants, cafes, bakeries, dessert/karak spots)
+ * get the stricter generation treatment: photo-derived visual cues, a
+ * restaurant-specific creative direction layer, and a minimum of 3
+ * business-specific modules in the quality gate.
+ */
+export function isHospitalityCategory(category: string): boolean {
+  return /restaurant|cafe|café|coffee|bakery|dessert|karak|shawarma|cafeteria|catering|food/i.test(
+    category
+  );
+}
+
+/**
  * Google place types that disqualify a result (spec: no government offices,
  * embassies, schools). Checked against the `types` array of each place.
  */

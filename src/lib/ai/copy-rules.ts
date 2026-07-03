@@ -116,6 +116,16 @@ export const GENERIC_AI_PHRASES: string[] = [
   "professional team",
   "customer satisfaction",
   "attention to detail",
+  "culinary journey",
+  "unforgettable dining experience",
+  "sophisticated dining experience",
+  "something for everyone",
+  "discover the flavors",
+  "where taste meets tradition",
+  "elevated dining",
+  "memorable moments",
+  "crafted with passion",
+  "attentive service and beautiful ambiance",
 ];
 
 /** Case-insensitive scan for generic AI phrasing; returns the phrases found. */

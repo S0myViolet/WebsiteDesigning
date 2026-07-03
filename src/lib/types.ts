@@ -206,6 +206,10 @@ export interface CreativeDirectionJson {
   cta_style: string;
   image_direction: string;
   why_this_will_not_feel_generic: string;
+  /** Cues extracted from the business's public photos (or inferred) */
+  visual_cues?: VisualCuesJson | null;
+  /** Restaurant/cafe-specific direction layer (hospitality categories only) */
+  hospitality?: HospitalityDirectionJson | null;
 }
 
 /** Curated font pairings the visual-style step selects from. */
@@ -391,6 +395,44 @@ export interface QualityReportJson {
  * deliverable).
  */
 export type GenerationStatus = "passed" | "failed_quality_gate";
+
+/**
+ * Design cues extracted from the business's public Google photos (via the
+ * official Places Photo API + an AI vision pass) or tastefully inferred when
+ * no photos are usable. Grounds the site's palette and mood in how the
+ * business actually looks. Analyzed internally only — photos are never
+ * embedded in generated sites.
+ */
+export interface VisualCuesJson {
+  source: "photos" | "inferred";
+  /** Dominant colors seen in the venue/photos (hex) */
+  dominant_colors: string[];
+  accent_colors: string[];
+  lighting_mood: string;
+  material_feel: string;
+  day_night_feel: string;
+  casual_or_refined: string;
+  vibe_cues: string[];
+  notes: string;
+}
+
+/** Restaurant/hospitality-specific creative direction layer. */
+export interface HospitalityDirectionJson {
+  restaurant_positioning: string;
+  cuisine_identity: string;
+  visit_moment: string;
+  audience_type: string;
+  atmosphere: string;
+  visual_mood: string;
+  dominant_colors: string[];
+  accent_colors: string[];
+  materials_and_textures: string[];
+  hero_approach: string;
+  menu_presentation_style: string;
+  cta_strategy: string;
+  business_specific_modules: string[];
+  why_this_matches_the_company: string;
+}
 
 /** Result of the uniqueness gate comparing this site to other generated sites. */
 export interface UniquenessNotes {

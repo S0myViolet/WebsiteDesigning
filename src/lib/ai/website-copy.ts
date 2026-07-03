@@ -36,7 +36,7 @@ const LAYOUT_FEATURE_HINTS: Record<LayoutType, string> = {
   "local-practical":
     'feature_sections: 2-3 of ["checklist" (what every job/service includes, 4-6 concrete items), "service-area" (areas served / why the location is convenient), "steps" (how a job goes from call to done)].',
   hospitality:
-    'feature_sections: 2 of ["highlights" (menu highlights grounded in reviews), "perfect-for" (occasions and visitors this place suits: breakfast meetings, family dinners, quick karak stops — only themes the reviews support)].',
+    'feature_sections: 3 of ["highlights" (menu highlights / what regulars order, grounded in reviews), "perfect-for" (occasions and visitors this place suits: breakfast meetings, family dinners, quick karak stops — only themes the reviews support), "steps" (how a visit works / how to get a table) or "service-area" (visit timing: when to come, from hours + review patterns)]. Restaurants need at least 3 substantial modules.',
   "wellness-clinic":
     'feature_sections: 2 of ["steps" (what to expect on a visit, 3-4 steps), "reassurance" (patient/first-visit reassurance grounded in review praise)].',
   "creative-portfolio":
@@ -78,7 +78,18 @@ function buildSystemPrompt(
 - Visual story (what the first five seconds should say): ${direction.visual_story}
 - Signature motif: ${direction.signature_motif}
 - CTA personality: ${direction.cta_style}
-- What must separate this from a template: ${direction.why_this_will_not_feel_generic}`
+- What must separate this from a template: ${direction.why_this_will_not_feel_generic}${
+    direction.hospitality
+      ? `
+HOSPITALITY DIRECTION (restaurant-specific — the copy must live up to this):
+- Positioning: ${direction.hospitality.restaurant_positioning}
+- Cuisine identity: ${direction.hospitality.cuisine_identity}
+- Visit moment: ${direction.hospitality.visit_moment}
+- Menu presentation: ${direction.hospitality.menu_presentation_style}
+- CTA strategy: ${direction.hospitality.cta_strategy}
+- Required modules (write ALL of these as feature_sections): ${direction.hospitality.business_specific_modules.join("; ")}`
+      : ""
+  }`
     : "";
 
   const briefBlock = brief
@@ -147,7 +158,8 @@ Every key is required. All colors are hex strings like "#1d4ed8".`;
 function buildUserPrompt(
   input: BusinessAnalysisInput,
   analysis: AnalysisJson,
-  critique?: string
+  critique?: string,
+  baseCopy?: WebsiteCopyJson | null
 ): string {
   const base = `Write the draft website copy JSON for this Dubai business.
 
@@ -156,6 +168,18 @@ ${buildBusinessDump(input)}
 Business analysis (already grounded in the reviews above):
 ${JSON.stringify(analysis, null, 2)}`;
   if (!critique) return base;
+  if (baseCopy) {
+    // Surgical revision: full rewrites play whack-a-mole with generic
+    // phrasing (each rewrite invents new filler for the reviewer to flag).
+    // Editing the existing draft converges.
+    return `${base}
+
+CURRENT DRAFT (mostly good — a quality reviewer requested specific fixes):
+${JSON.stringify(baseCopy, null, 2)}
+
+REVISE the current draft. Apply ONLY the fixes below, keep every other field as close to the current draft as possible (do not rephrase sentences that were not flagged), and return the complete JSON:
+${critique}`;
+  }
   return `${base}
 
 A quality reviewer rejected the previous draft. Fix ALL of these problems while keeping everything grounded:
@@ -466,6 +490,8 @@ export interface GenerateCopyOptions {
   layout?: LayoutType;
   /** Quality-gate critique for the improvement pass */
   critique?: string;
+  /** When set with critique, revise this draft surgically instead of rewriting */
+  baseCopy?: WebsiteCopyJson | null;
 }
 
 /**
@@ -485,7 +511,7 @@ export async function generateWebsiteCopy(
     layout,
     opts.direction ?? null
   );
-  const user = buildUserPrompt(input, analysis, opts.critique);
+  const user = buildUserPrompt(input, analysis, opts.critique, opts.baseCopy ?? null);
 
   const raw = await chatJson<unknown>({
     apiKey: opts.apiKey,

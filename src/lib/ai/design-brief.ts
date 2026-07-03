@@ -10,6 +10,7 @@ import type {
   DesignBriefJson,
   DesignSystemJson,
   ResearchResult,
+  VisualCuesJson,
   VisualStyleJson,
 } from "@/lib/types";
 import { LAYOUT_TYPES } from "@/lib/types";
@@ -204,11 +205,30 @@ const designSystemSchema = z.object({
   motion_style: z.string().catch("subtle"),
 });
 
+const hospitalitySchema = z.object({
+  restaurant_positioning: z.string().catch(""),
+  cuisine_identity: z.string().catch(""),
+  visit_moment: z.string().catch(""),
+  audience_type: z.string().catch(""),
+  atmosphere: z.string().catch(""),
+  visual_mood: z.string().catch(""),
+  dominant_colors: z.array(z.string()).catch([]),
+  accent_colors: z.array(z.string()).catch([]),
+  materials_and_textures: z.array(z.string()).catch([]),
+  hero_approach: z.string().catch(""),
+  menu_presentation_style: z.string().catch(""),
+  cta_strategy: z.string().catch(""),
+  business_specific_modules: z.array(z.string()).catch([]),
+  why_this_matches_the_company: z.string().catch(""),
+});
+
 const responseSchema = z.object({
   creative_direction: creativeDirectionSchema,
   design_system: designSystemSchema,
   design_brief: briefSchema,
   visual_style: styleSchema,
+  /** Requested only for hospitality businesses */
+  hospitality_direction: hospitalitySchema.optional(),
 });
 
 function formatZodIssues(error: z.ZodError): string {
@@ -277,7 +297,10 @@ function cleanStrings(values: string[]): string[] {
   return values.map((v) => sanitizeCopy(v).trim()).filter((v) => v.length > 0);
 }
 
-function finalize(data: z.infer<typeof responseSchema>): {
+function finalize(
+  data: z.infer<typeof responseSchema>,
+  extras?: { visualCues?: VisualCuesJson | null }
+): {
   direction: CreativeDirectionJson;
   system: DesignSystemJson;
   brief: DesignBriefJson;
@@ -301,6 +324,29 @@ function finalize(data: z.infer<typeof responseSchema>): {
     why_this_will_not_feel_generic: sanitizeCopy(
       c.why_this_will_not_feel_generic
     ).trim(),
+    visual_cues: extras?.visualCues ?? null,
+    hospitality: data.hospitality_direction
+      ? {
+          restaurant_positioning: sanitizeCopy(data.hospitality_direction.restaurant_positioning).trim(),
+          cuisine_identity: sanitizeCopy(data.hospitality_direction.cuisine_identity).trim(),
+          visit_moment: sanitizeCopy(data.hospitality_direction.visit_moment).trim(),
+          audience_type: sanitizeCopy(data.hospitality_direction.audience_type).trim(),
+          atmosphere: sanitizeCopy(data.hospitality_direction.atmosphere).trim(),
+          visual_mood: sanitizeCopy(data.hospitality_direction.visual_mood).trim(),
+          dominant_colors: data.hospitality_direction.dominant_colors
+            .map((v) => safeHex(v, ""))
+            .filter(Boolean),
+          accent_colors: data.hospitality_direction.accent_colors
+            .map((v) => safeHex(v, ""))
+            .filter(Boolean),
+          materials_and_textures: cleanStrings(data.hospitality_direction.materials_and_textures),
+          hero_approach: sanitizeCopy(data.hospitality_direction.hero_approach).trim(),
+          menu_presentation_style: sanitizeCopy(data.hospitality_direction.menu_presentation_style).trim(),
+          cta_strategy: sanitizeCopy(data.hospitality_direction.cta_strategy).trim(),
+          business_specific_modules: cleanStrings(data.hospitality_direction.business_specific_modules),
+          why_this_matches_the_company: sanitizeCopy(data.hospitality_direction.why_this_matches_the_company).trim(),
+        }
+      : null,
   };
 
   const system: DesignSystemJson = {
@@ -383,7 +429,15 @@ export async function generateDesignBrief(
   input: BusinessAnalysisInput,
   analysis: AnalysisJson,
   research: ResearchResult | null,
-  opts: { apiKey: string; model: string; critique?: string }
+  opts: {
+    apiKey: string;
+    model: string;
+    critique?: string;
+    /** Cues from the business's real photos — grounds palette and mood */
+    visualCues?: VisualCuesJson | null;
+    /** Restaurants/cafes: also produce the hospitality direction layer */
+    hospitality?: boolean;
+  }
 ): Promise<{
   direction: CreativeDirectionJson;
   system: DesignSystemJson;
@@ -391,8 +445,45 @@ export async function generateDesignBrief(
   style: VisualStyleJson;
 }> {
   const system = buildSystemPrompt();
+  const cues = opts.visualCues;
+  const cuesBlock = cues
+    ? `
+
+PUBLIC VISUAL CUES extracted from this business's real photos (the site must look like THIS place — ground the palette in these, do not invent a random one):
+- Dominant colors seen at the venue: ${cues.dominant_colors.join(", ") || "(none extracted)"}
+- Accent colors: ${cues.accent_colors.join(", ") || "(none)"}
+- Lighting: ${cues.lighting_mood || "unknown"} · Materials: ${cues.material_feel || "unknown"}
+- Day/night feel: ${cues.day_night_feel || "unknown"} · ${cues.casual_or_refined || ""}
+- Vibe: ${cues.vibe_cues.join("; ") || "(none)"}
+- Designer note: ${cues.notes || ""}
+Derive visual_style.color_palette primarily from the dominant/accent colors above (adjust tastefully for legibility; keep the background light unless the venue is clearly an evening/dark concept). No random palettes.`
+    : "";
+  const hospitalityBlock = opts.hospitality
+    ? `
+
+This is a HOSPITALITY business. In ADDITION to the required JSON keys, include a "hospitality_direction" object:
+{
+  "restaurant_positioning": string,     // one sharp sentence: what this place is, for whom
+  "cuisine_identity": string,
+  "visit_moment": string,               // when people actually come (from reviews/hours): business lunch, late-night karak, weekend family dinner...
+  "audience_type": string,
+  "atmosphere": string,
+  "visual_mood": string,
+  "dominant_colors": [hex],             // grounded in the visual cues when provided
+  "accent_colors": [hex],
+  "materials_and_textures": string[],
+  "hero_approach": string,
+  "menu_presentation_style": string,    // how highlights/menu items should be presented
+  "cta_strategy": string,               // reserve / call / WhatsApp / directions — what fits THIS place
+  "business_specific_modules": string[],// at least 3 modules this site needs (popular dishes, visit timing, what regulars order, perfect-for, reservation flow...)
+  "why_this_matches_the_company": string
+}
+Every field grounded in the reviews/photos — a reviewer should recognize the place from it.`
+    : "";
   const user =
     buildUserPrompt(input, analysis, research) +
+    cuesBlock +
+    hospitalityBlock +
     (opts.critique
       ? `
 
@@ -429,5 +520,5 @@ Return corrected VALID JSON matching the schema in the system message exactly.`,
     }
   }
 
-  return finalize(parsed.data);
+  return finalize(parsed.data, { visualCues: opts.visualCues ?? null });
 }
