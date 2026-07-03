@@ -21,6 +21,7 @@ export async function getSettings(): Promise<AppSettings> {
     openaiApiKey: process.env.OPENAI_API_KEY || "",
     searchApiKey: process.env.SEARCH_API_KEY || "",
     searchEngineId: process.env.SEARCH_ENGINE_ID || "",
+    netlifyToken: process.env.NETLIFY_TOKEN || "",
     ...DEFAULT_SETTINGS,
   };
 
@@ -65,6 +66,7 @@ export function maskSettings(settings: AppSettings): AppSettings & {
   hasGoogleKey: boolean;
   hasOpenaiKey: boolean;
   hasSearchKey: boolean;
+  hasNetlifyToken: boolean;
 } {
   const mask = (v: string) => (v ? KEY_MASK : "");
   return {
@@ -72,8 +74,10 @@ export function maskSettings(settings: AppSettings): AppSettings & {
     googleMapsApiKey: mask(settings.googleMapsApiKey),
     openaiApiKey: mask(settings.openaiApiKey),
     searchApiKey: mask(settings.searchApiKey),
+    netlifyToken: mask(settings.netlifyToken),
     hasGoogleKey: Boolean(settings.googleMapsApiKey),
     hasOpenaiKey: Boolean(settings.openaiApiKey),
     hasSearchKey: Boolean(settings.searchApiKey),
+    hasNetlifyToken: Boolean(settings.netlifyToken),
   };
 }

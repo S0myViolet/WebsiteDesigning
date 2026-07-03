@@ -97,7 +97,8 @@ export function ScoreBadge({
 const LEAD_STATUS_META: Record<LeadStatusValue, { label: string; tone: string }> = {
   NEW: { label: "New", tone: TONES.gray },
   SAVED: { label: "Saved", tone: TONES.blue },
-  CONTACTED: { label: "Contacted", tone: TONES.green },
+  CONTACTED: { label: "Contacted", tone: TONES.amber },
+  WON: { label: "Won", tone: TONES.green },
   REJECTED: { label: "Rejected", tone: TONES.red },
 };
 

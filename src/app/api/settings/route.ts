@@ -13,6 +13,7 @@ const settingsSchema = z
     openaiApiKey: z.string(),
     searchApiKey: z.string(),
     searchEngineId: z.string(),
+    netlifyToken: z.string(),
     defaultAreas: z.array(z.string()),
     defaultCategories: z.array(z.string()),
     minReviews: z.number().int().min(0),
@@ -25,7 +26,7 @@ const settingsSchema = z
   })
   .partial();
 
-const API_KEY_FIELDS = ["googleMapsApiKey", "openaiApiKey", "searchApiKey"] as const;
+const API_KEY_FIELDS = ["googleMapsApiKey", "openaiApiKey", "searchApiKey", "netlifyToken"] as const;
 
 export async function GET() {
   try {

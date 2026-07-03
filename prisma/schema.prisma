@@ -140,6 +140,11 @@ model GeneratedWebsite {
   designSystem         String?
   // JSON-encoded UniquenessNotes (structural-signature comparison result)
   uniquenessNotes      String?
+  // Public unguessable demo URL (Netlify), its site id (for re-publishing to
+  // the same URL), and when it was last published
+  demoUrl              String?
+  demoSiteId           String?
+  demoDeployedAt       DateTime?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -149,10 +154,13 @@ model GeneratedWebsite {
 model LeadStatus {
   id          String    @id @default(cuid())
   businessId  String    @unique
-  // Status values: NEW | SAVED | CONTACTED | REJECTED
+  // Status values: NEW | SAVED | CONTACTED | WON | REJECTED
   status      String    @default("NEW")
   notes       String?
   contactedAt DateTime?
+  // JSON-encoded HandoffChecklist (deposit/photos/content approval, domain,
+  // live URL) — the client-delivery workflow after a lead is WON
+  handoffJson String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

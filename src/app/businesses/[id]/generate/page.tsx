@@ -6,12 +6,16 @@ import { useParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  Check,
   CheckCircle2,
+  Copy,
   Download,
   ExternalLink,
+  Globe,
   LayoutTemplate,
   Palette,
   RefreshCw,
+  Share2,
   Wand2,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -38,9 +42,9 @@ import {
   UniquenessCard,
   VisualStyleCard,
 } from "@/components/generate/insight-cards";
-import { cn } from "@/lib/utils";
+import { cn, whatsappLink } from "@/lib/utils";
 import { LAYOUT_TYPES, LAYOUT_TYPE_LABELS, type LayoutType } from "@/lib/types";
-import type { BusinessDetail } from "@/lib/api-types";
+import type { BusinessDetail, WebsiteDto } from "@/lib/api-types";
 
 type GenerateMode = "full" | "copy" | "style";
 /** A user-triggered pipeline action: a regenerate mode or a layout switch. */
@@ -155,6 +159,13 @@ export default function GenerateWebsitePage() {
   const [selectedLayout, setSelectedLayout] = React.useState<LayoutType | null>(
     null
   );
+  const [publishing, setPublishing] = React.useState(false);
+  const [publishError, setPublishError] = React.useState<string | null>(null);
+  /** WhatsApp share link returned by the last publish call. */
+  const [publishedWhatsappUrl, setPublishedWhatsappUrl] = React.useState<
+    string | null
+  >(null);
+  const [copied, setCopied] = React.useState(false);
 
   const fetchDetail = React.useCallback(async () => {
     try {
@@ -219,6 +230,46 @@ export default function GenerateWebsitePage() {
     },
     [id, fetchDetail]
   );
+
+  const handlePublish = React.useCallback(async () => {
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      const res = await fetch(`/api/businesses/${id}/publish-demo`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        setPublishError(await readError(res));
+        return;
+      }
+      const data = (await res.json()) as {
+        website: WebsiteDto;
+        whatsappUrl: string | null;
+      };
+      setPublishedWhatsappUrl(data.whatsappUrl);
+      setBusiness((prev) =>
+        prev ? { ...prev, website: data.website } : prev
+      );
+    } catch {
+      setPublishError("Network error — could not publish the demo.");
+    } finally {
+      setPublishing(false);
+    }
+  }, [id]);
+
+  const handleCopyDemoUrl = React.useCallback(() => {
+    const url = business?.website?.demoUrl;
+    if (!url) return;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        setPublishError("Could not copy the URL to the clipboard.");
+      });
+  }, [business?.website?.demoUrl]);
 
   if (loading) {
     return (
@@ -350,6 +401,17 @@ export default function GenerateWebsitePage() {
   }
 
   // ---- Website exists ------------------------------------------------------
+  // WhatsApp share link: prefer the URL returned by the publish call; when
+  // rendering an already-published demo, build it from the business phone.
+  const demoWhatsappUrl =
+    publishedWhatsappUrl ??
+    (website.demoUrl && business.phone
+      ? whatsappLink(
+          business.phone,
+          `Hi! I put together a website concept for ${business.name} — you can see the draft here: ${website.demoUrl}`
+        )
+      : null);
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Top header bar */}
@@ -449,10 +511,68 @@ export default function GenerateWebsitePage() {
             <Download />
             Download code ZIP
           </a>
+          {website.hasPreview && (
+            <Button
+              variant="outline"
+              onClick={() => void handlePublish()}
+              disabled={generating || publishing}
+            >
+              {publishing ? <Spinner size="sm" /> : <Globe />}
+              {publishing
+                ? "Publishing…"
+                : website.demoUrl
+                  ? "Republish demo"
+                  : "Publish demo link"}
+            </Button>
+          )}
         </div>
       </div>
 
       {genError && <InlineError message={genError} />}
+      {publishError && <InlineError message={publishError} />}
+
+      {website.demoUrl && (
+        <Card>
+          <CardContent className="space-y-2 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <a
+                href={website.demoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-w-0 items-center gap-1.5 break-all text-sm text-primary hover:underline"
+              >
+                <ExternalLink className="h-4 w-4 shrink-0" />
+                {website.demoUrl}
+              </a>
+              <Button variant="outline" size="sm" onClick={handleCopyDemoUrl}>
+                {copied ? <Check /> : <Copy />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+              {demoWhatsappUrl && (
+                <a
+                  href={demoWhatsappUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonVariants({
+                    variant: "outline",
+                    size: "sm",
+                  })}
+                >
+                  <Share2 />
+                  Share on WhatsApp
+                </a>
+              )}
+            </div>
+            {website.demoDeployedAt && (
+              <p className="text-xs text-muted-foreground">
+                Published{" "}
+                {new Date(website.demoDeployedAt).toLocaleDateString()} —
+                republishing keeps the same URL.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-5">
         {/* LEFT: live preview (~60%) */}

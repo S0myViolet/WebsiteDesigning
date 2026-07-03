@@ -1,6 +1,7 @@
 // Response shapes returned by the API routes and consumed by the dashboard UI.
 import type {
   AnalysisJson,
+  HandoffChecklist,
   BusinessListItem,
   CreativeDirectionJson,
   DesignSystemJson,
@@ -75,6 +76,9 @@ export interface WebsiteDto {
   designSystem: DesignSystemJson | null;
   /** Structural-uniqueness comparison against other generated sites */
   uniquenessNotes: UniquenessNotes | null;
+  /** Public unguessable demo URL (when published) */
+  demoUrl: string | null;
+  demoDeployedAt: string | null;
   updatedAt: string;
 }
 
@@ -82,6 +86,8 @@ export interface LeadStatusDto {
   status: LeadStatusValue;
   notes: string | null;
   contactedAt: string | null;
+  /** Client-delivery checklist (present once a lead reaches WON) */
+  handoff: HandoffChecklist | null;
   updatedAt: string;
 }
 

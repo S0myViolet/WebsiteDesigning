@@ -23,6 +23,7 @@ import {
   type BusinessListItem,
   type CreativeDirectionJson,
   type DesignSystemJson,
+  type HandoffChecklist,
   type DesignBriefJson,
   type LayoutType,
   type LeadStatusValue,
@@ -146,6 +147,8 @@ export function toWebsiteDto(w: GeneratedWebsite): WebsiteDto {
     ),
     designSystem: parseJsonField<DesignSystemJson | null>(w.designSystem, null),
     uniquenessNotes: parseJsonField<UniquenessNotes | null>(w.uniquenessNotes, null),
+    demoUrl: w.demoUrl,
+    demoDeployedAt: w.demoDeployedAt ? w.demoDeployedAt.toISOString() : null,
     updatedAt: w.updatedAt.toISOString(),
   };
 }
@@ -155,6 +158,7 @@ export function toLeadStatusDto(l: LeadStatus): LeadStatusDto {
     status: l.status as LeadStatusValue,
     notes: l.notes,
     contactedAt: l.contactedAt ? l.contactedAt.toISOString() : null,
+    handoff: parseJsonField<HandoffChecklist | null>(l.handoffJson, null),
     updatedAt: l.updatedAt.toISOString(),
   };
 }

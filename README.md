@@ -47,13 +47,18 @@ The generator page doubles as a sales-demo tool: quality score with audit checks
 ### 6. Dashboard
 - Sortable, filterable leads table (category, area, website status, lead status, min reviews/rating/score, free-text search) with pagination.
 - Business detail view: profile data, reviews, keyword chips, score breakdown, analysis results, website preview, and lead actions.
-- Lead pipeline: NEW → SAVED → CONTACTED / REJECTED with notes and contacted-at timestamps (never downgrades CONTACTED/REJECTED back to SAVED).
+- Lead pipeline: NEW → SAVED → CONTACTED → WON / REJECTED with notes and contacted-at timestamps (never downgrades CONTACTED/REJECTED back to SAVED).
 - Settings page for API keys (masked in the UI), default filters, website style, and AI model.
 - Optional email/password login protecting the whole app.
 
-### 7. Exports
+### 7. Demo links & client handoff
+- **Publish demo link**: one click deploys the draft preview to an unguessable `*.netlify.app` URL (random suffix, `noindex`, draft-labeled) you can share privately with the owner — with a prefilled WhatsApp message to the business's own number. Republishing updates the same URL. Requires a free Netlify personal access token (`NETLIFY_TOKEN` or Settings).
+- **Handoff checklist** (on WON leads): deposit received, photos received, content approved by owner, client domain, live URL, notes.
+- **Production export**: once the owner has approved the content and a domain is set, a second ZIP export produces the unlabeled production site — draft ribbon and disclaimer removed, search indexing enabled, the client's domain as canonical URL, plus a `DEPLOY.md` walking through Cloudflare Registrar (domain at cost) + Cloudflare Pages (free hosting) and the free-transfer promise to put in the client agreement. Gated server-side: the route refuses unless the lead is WON with `contentApproved` and a valid domain.
+
+### 8. Exports
 - CSV export of the current filtered lead list (configurable columns), served as `dubai-leads-<yyyy-mm-dd>.csv`.
-- ZIP export of any generated website's Next.js source code.
+- ZIP export of any generated website's Next.js source code (draft-labeled), plus the gated production ZIP above.
 
 ---
 
@@ -102,6 +107,9 @@ The generator page doubles as a sales-demo tool: quality score with audit checks
 │   │       ├── businesses/[id]/generate-website/route.ts
 │   │       ├── businesses/[id]/website-preview/route.ts
 │   │       ├── businesses/[id]/export-code/route.ts
+│   │       ├── businesses/[id]/publish-demo/route.ts
+│   │       ├── businesses/[id]/handoff/route.ts
+│   │       ├── businesses/[id]/export-production/route.ts
 │   │       ├── businesses/[id]/save-lead/route.ts
 │   │       ├── businesses/[id]/update-status/route.ts
 │   │       ├── export/csv/route.ts
@@ -128,9 +136,11 @@ The generator page doubles as a sales-demo tool: quality score with audit checks
 │       │   ├── copy-rules.ts      # Grounding prompt rules + banned-phrase sanitizer
 │       │   ├── analysis.ts        # Review analysis (AnalysisJson)
 │       │   └── website-copy.ts    # Website copy generation (WebsiteCopyJson)
+│       ├── deploy/
+│       │   └── netlify.ts         # Demo-link publishing (Netlify API, ZIP deploy)
 │       └── website-builder/
 │           ├── preview-html.ts    # Single-file HTML draft preview
-│           ├── template.ts        # Generated Next.js project files
+│           ├── template.ts        # Generated Next.js project files (draft + production modes)
 │           └── zip.ts             # JSZip packaging
 ├── .env.example
 ├── package.json
@@ -148,8 +158,8 @@ JSON-ish payloads are stored as **JSON-encoded String columns** so the same sche
 | `Business` | One row per discovered place | `placeId` (unique), `name`, `category`, `area`, `phone`, `rating`, `reviewCount`, `websiteUrl`, `websiteStatus`, `googleMapsUrl`, `openingHours`*, `photosJson`*, `keywordsJson`*, `rawPlaceData`*, `lat`/`lng`, `isLikelyChain`, `opportunityScore`, `scoreBreakdown`* |
 | `Review` | Review sample per business (max 5 from the API) | `businessId`, `reviewText`, `reviewRating`, `reviewDate`, `reviewerName` |
 | `Analysis` | AI review analysis (1:1 with Business) | `businessSummary`, `strengths`*, `weaknesses`*, `services`*, `seoKeywords`*, `localSeoPhrases`*, `tone`, `suggestedCta`, `recommendedSections`*, `opportunityScore`, `scoreBreakdown`*, `rawJson`* |
-| `GeneratedWebsite` | Generated draft site (1:1 with Business) | `homepageCopy`, `seoTitle`, `seoDescription`, `suggestedDomainNames`*, `colorPalette`*, `fontRecommendation`, `generatedCode`* (file map), `previewHtml`, `rawJson`* |
-| `LeadStatus` | CRM-lite pipeline (1:1 with Business) | `status` (`NEW`/`SAVED`/`CONTACTED`/`REJECTED`), `notes`, `contactedAt` |
+| `GeneratedWebsite` | Generated draft site (1:1 with Business) | `homepageCopy`, `seoTitle`, `seoDescription`, `suggestedDomainNames`*, `colorPalette`*, `fontRecommendation`, `generatedCode`* (file map), `previewHtml`, `rawJson`*, `demoUrl`/`demoSiteId`/`demoDeployedAt` |
+| `LeadStatus` | CRM-lite pipeline (1:1 with Business) | `status` (`NEW`/`SAVED`/`CONTACTED`/`WON`/`REJECTED`), `notes`, `contactedAt`, `handoffJson`* (delivery checklist) |
 | `Setting` | Single row (`id=1`) of settings overrides | `json`* (Partial\<AppSettings\> merged over env + defaults) |
 
 \* JSON-encoded string column.
@@ -172,9 +182,12 @@ All error responses are JSON `{ "error": string }` with an appropriate status co
 | POST | `/api/businesses/[id]/verify-website` | — | `VerifyWebsiteResponse` — runs website detection, updates `websiteStatus` (+ `websiteUrl` if found) |
 | POST | `/api/businesses/[id]/generate-website` | `{mode?: "full"\|"copy"\|"style"}` | `{website: WebsiteDto, research: ResearchResult}` — runs the full 10-step pipeline (`full`, default), rewrites copy only (`copy`), or regenerates brief/style/layout keeping the copy (`style`). Auto-runs the analysis if missing |
 | GET | `/api/businesses/[id]/website-preview` | — | `text/html` (stored `previewHtml`); `404` JSON if not generated |
-| GET | `/api/businesses/[id]/export-code` | — | `application/zip` download of the generated Next.js project; `404` if not generated |
+| GET | `/api/businesses/[id]/export-code` | — | `application/zip` download of the generated Next.js project (draft-labeled); `404` if not generated |
+| POST | `/api/businesses/[id]/publish-demo` | — | `{website: WebsiteDto, whatsappUrl: string \| null}` — deploys the preview HTML to an unguessable Netlify URL (`demoUrl`); republish updates the same site. `400` without a Netlify token or generated preview |
+| POST | `/api/businesses/[id]/handoff` | `Partial<HandoffChecklist>` | `{lead: LeadStatusDto}` — merges the client-delivery checklist and marks the lead `WON` |
+| GET | `/api/businesses/[id]/export-production` | — | `application/zip` production site (no draft labels, indexable, canonical = client domain, includes `DEPLOY.md`). `403` unless the lead is `WON` with `contentApproved`; `400` without a valid domain |
 | POST | `/api/businesses/[id]/save-lead` | — | `{lead: LeadStatusDto}` — upserts to `SAVED` (never downgrades `CONTACTED`/`REJECTED`) |
-| POST | `/api/businesses/[id]/update-status` | `{status: "NEW"\|"SAVED"\|"CONTACTED"\|"REJECTED", notes?}` | `{lead: LeadStatusDto}` — sets `contactedAt` when transitioning to `CONTACTED` |
+| POST | `/api/businesses/[id]/update-status` | `{status: "NEW"\|"SAVED"\|"CONTACTED"\|"WON"\|"REJECTED", notes?}` | `{lead: LeadStatusDto}` — sets `contactedAt` when transitioning to `CONTACTED` |
 | GET | `/api/export/csv` | same filters as `/api/businesses`, no paging | `text/csv` attachment `dubai-leads-<yyyy-mm-dd>.csv` |
 | GET | `/api/settings` | — | Masked `AppSettings` (API keys shown as `abcd…wxyz`) |
 | PUT | `/api/settings` | `Partial<AppSettings>` | Masked settings. Masked API-key values (placeholder bullets) are ignored so a round-tripped form never wipes real keys; an explicit empty string clears the stored key override (env fallback applies) |
@@ -201,7 +214,7 @@ All error responses are JSON `{ "error": string }` with an appropriate status co
    - `GOOGLE_MAPS_API_KEY` — a Google Maps Platform key with **Places API (New)** enabled.
    - `OPENAI_API_KEY` — for review analysis and website copy generation.
 
-   Optional: `SEARCH_API_KEY` + `SEARCH_ENGINE_ID` (Custom Search website verification), `ADMIN_EMAIL` + `ADMIN_PASSWORD` + `AUTH_SECRET` (login), `NEXT_PUBLIC_APP_URL`. Keys can also be entered later on the in-app Settings page.
+   Optional: `SEARCH_API_KEY` + `SEARCH_ENGINE_ID` (Custom Search website verification), `NETLIFY_TOKEN` (the Publish-demo-link button — free personal access token from Netlify → User settings → Applications), `ADMIN_EMAIL` + `ADMIN_PASSWORD` + `AUTH_SECRET` (login), `NEXT_PUBLIC_APP_URL`. Keys can also be entered later on the in-app Settings page.
 
 3. **Create the database** (SQLite file, zero setup)
 
@@ -231,6 +244,11 @@ All error responses are JSON `{ "error": string }` with an appropriate status co
    5. Click **Preview** to view the generated single-page draft in the browser.
    6. Click **Download ZIP** to get the full Next.js project for that site.
    7. Back on the dashboard, use **Export CSV** to download the current filtered lead list.
+
+7. **Pitch → win → deliver** (once a lead looks good)
+   1. On the generate page, click **Publish demo link** to push the draft to a private unguessable URL, then share it with the owner (the WhatsApp button prefills a message to the business's own number).
+   2. When they say yes, set the lead to **Won** on the business detail page and work through the **Client handoff** checklist: deposit, photos, content approval, domain.
+   3. With content approved and a domain saved, **Production export** unlocks — a clean ZIP (no draft labels, indexable, their domain as canonical) with a `DEPLOY.md` guide for Cloudflare Registrar + Pages.
 
 ### Authentication
 

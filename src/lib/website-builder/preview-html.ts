@@ -26,6 +26,14 @@ export interface PreviewInput {
   style?: VisualStyleJson | null;
   system?: DesignSystemJson | null;
   layout?: LayoutType;
+  /**
+   * Production hand-off mode (buildNextJsProject only; ignored by the HTML
+   * preview). Only set after the business owner has approved the content —
+   * removes the concept-draft ribbon and footer disclaimer, enables search
+   * indexing, sets the canonical URL to the client's domain, and swaps the
+   * README for a Cloudflare Pages deploy guide.
+   */
+  production?: { domain: string } | null;
 }
 
 export function buildPreviewHtml(input: PreviewInput): string {

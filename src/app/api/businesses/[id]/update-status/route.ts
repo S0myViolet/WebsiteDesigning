@@ -21,7 +21,7 @@ export async function POST(
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Invalid body: status must be one of NEW, SAVED, CONTACTED, REJECTED" },
+        { error: "Invalid body: status must be one of NEW, SAVED, CONTACTED, WON, REJECTED" },
         { status: 400 }
       );
     }

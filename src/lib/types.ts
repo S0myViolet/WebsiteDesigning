@@ -18,7 +18,32 @@ export const WEBSITE_STATUS_LABELS: Record<WebsiteStatus, string> = {
   UNKNOWN: "Unknown",
 };
 
-export type LeadStatusValue = "NEW" | "SAVED" | "CONTACTED" | "REJECTED";
+export type LeadStatusValue = "NEW" | "SAVED" | "CONTACTED" | "WON" | "REJECTED";
+
+/**
+ * Client-delivery checklist after a lead is WON. The final production export
+ * (draft banner removed) only unlocks once contentApproved is true.
+ */
+export interface HandoffChecklist {
+  depositReceived: boolean;
+  photosReceived: boolean;
+  /** Owner confirmed the site copy is accurate — gates the final export */
+  contentApproved: boolean;
+  /** The real domain chosen for the client, e.g. "bandungdubai.com" */
+  domain: string;
+  /** Where the production site ended up, once deployed */
+  liveUrl: string;
+  notes: string;
+}
+
+export const EMPTY_HANDOFF: HandoffChecklist = {
+  depositReceived: false,
+  photosReceived: false,
+  contentApproved: false,
+  domain: "",
+  liveUrl: "",
+  notes: "",
+};
 
 export interface PlaceReview {
   text: string;
@@ -413,6 +438,8 @@ export interface AppSettings {
   openaiApiKey: string;
   searchApiKey: string;
   searchEngineId: string;
+  /** Netlify personal access token — powers the "Publish demo link" button */
+  netlifyToken: string;
   defaultAreas: string[];
   defaultCategories: string[];
   minReviews: number;

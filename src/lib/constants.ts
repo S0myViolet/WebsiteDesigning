@@ -199,7 +199,7 @@ export const KEYWORD_STOPWORDS = new Set([
   "make", "makes", "got", "give", "given", "each", "both", "being", "does",
 ]);
 
-export const LEAD_STATUS_VALUES = ["NEW", "SAVED", "CONTACTED", "REJECTED"] as const;
+export const LEAD_STATUS_VALUES = ["NEW", "SAVED", "CONTACTED", "WON", "REJECTED"] as const;
 
 export const WEBSITE_STYLE_OPTIONS = [
   "Modern & minimal",

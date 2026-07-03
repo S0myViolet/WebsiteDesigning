@@ -25,6 +25,7 @@ const LEAD_STATUS_LABELS: Record<(typeof LEAD_STATUS_VALUES)[number], string> =
     NEW: "New",
     SAVED: "Saved",
     CONTACTED: "Contacted",
+    WON: "Won",
     REJECTED: "Rejected",
   };
 

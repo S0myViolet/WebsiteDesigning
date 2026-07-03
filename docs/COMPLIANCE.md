@@ -41,6 +41,9 @@ Dubai Lead Gen is a lead-qualification and sales-demo tool. It is designed to be
 
 - **Always a draft.** Every generated preview and exported project is a *demonstration* labeled as a draft. It exists so a business owner can see what their website could look like.
 - **Never publish without approval.** Do not deploy, host publicly, or index a generated site — and never present it as the business's official website — without the owner's explicit approval. Publishing a site that impersonates a business you do not represent may constitute impersonation/passing-off and violates this tool's intended use.
+- **Demo links stay drafts.** The "Publish demo link" button deploys the draft-labeled preview to an unguessable URL (random suffix, not linked from anywhere, `noindex`) so it can be shown privately to the business owner during a pitch. The concept-draft ribbon and full disclaimer remain on the page. Do not post demo links publicly, list them in directories, or point a real domain at them. Delete the demo site once the pitch concludes (won or lost).
+- **Production export is approval-gated by design.** The unlabeled production ZIP (draft ribbon and disclaimer removed, search indexing enabled) can only be exported after the lead is marked **Won** and the handoff checklist records **"Content approved by owner"** plus the client's domain. Only tick that box after the owner has actually reviewed and approved the content — the checkbox is your record of that approval. Deploy production sites only for clients who have engaged you.
+- **Domain ownership.** If you register the client's domain in your own registrar account (the recommended Cloudflare Registrar flow), put in writing that the domain is registered on the client's behalf and transfers to them free of charge on request. Do not hold client domains hostage.
 - **No fabricated claims.** Mirrored from the copy rules enforced in `src/lib/ai/copy-rules.ts`:
   - No invented facts: prices, staff names, awards, certifications, licenses, years in business, ownership claims.
   - Everything grounded in the provided data (reviews, editorial summary, category, location); if a detail is not in the source data, it is not stated.
@@ -65,6 +68,9 @@ Before each campaign, confirm every item:
 - [ ] I have reviewed the current Google Maps Platform ToS and Places policies and my retention practice matches them.
 - [ ] Reviewer names are never exported, published, or shown on generated sites.
 - [ ] Every generated site is labeled a draft and will not be published without the business owner's approval.
+- [ ] Demo links are shared privately with the business owner only, and deleted after the pitch.
+- [ ] I only exported a production (unlabeled) site after the owner reviewed and approved its content, and I have a written record of that approval.
+- [ ] Any client domain registered in my account is covered by a written free-transfer promise.
 - [ ] Generated copy contains no fabricated facts, prices, credentials, or superlatives.
 - [ ] All outreach is manual, one-to-one, honest about who I am and how I found the business.
 - [ ] My outreach complies with UAE telemarketing and data-protection rules (timing, consent, opt-out).

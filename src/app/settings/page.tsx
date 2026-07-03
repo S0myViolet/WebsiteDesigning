@@ -32,6 +32,7 @@ interface MaskedSettings extends AppSettings {
   hasGoogleKey: boolean;
   hasOpenaiKey: boolean;
   hasSearchKey: boolean;
+  hasNetlifyToken: boolean;
 }
 
 const AREA_OPTIONS = DUBAI_AREAS.map((area) => area.name);
@@ -67,6 +68,7 @@ export default function SettingsPage() {
   const [googleKey, setGoogleKey] = React.useState("");
   const [openaiKey, setOpenaiKey] = React.useState("");
   const [searchKey, setSearchKey] = React.useState("");
+  const [netlifyToken, setNetlifyToken] = React.useState("");
   const [searchEngineId, setSearchEngineId] = React.useState("");
   // Stored keys marked for removal on save (sent as "" so the DB override is
   // cleared and getSettings falls back to the env var).
@@ -74,7 +76,8 @@ export default function SettingsPage() {
     google: boolean;
     openai: boolean;
     search: boolean;
-  }>({ google: false, openai: false, search: false });
+    netlify: boolean;
+  }>({ google: false, openai: false, search: false, netlify: false });
 
   // Discovery defaults
   const [minReviews, setMinReviews] = React.useState("50");
@@ -102,7 +105,13 @@ export default function SettingsPage() {
     setGoogleKey("");
     setOpenaiKey("");
     setSearchKey("");
-    setClearKeys({ google: false, openai: false, search: false });
+    setNetlifyToken("");
+    setClearKeys({
+      google: false,
+      openai: false,
+      search: false,
+      netlify: false,
+    });
     setSearchEngineId(data.searchEngineId);
     setMinReviews(String(data.minReviews));
     setMinRating(String(data.minRating));
@@ -150,6 +159,8 @@ export default function SettingsPage() {
     else if (clearKeys.openai) payload.openaiApiKey = "";
     if (isNewKey(searchKey)) payload.searchApiKey = searchKey.trim();
     else if (clearKeys.search) payload.searchApiKey = "";
+    if (isNewKey(netlifyToken)) payload.netlifyToken = netlifyToken.trim();
+    else if (clearKeys.netlify) payload.netlifyToken = "";
     if (searchEngineId.trim() !== current.searchEngineId) {
       payload.searchEngineId = searchEngineId.trim();
     }
@@ -339,6 +350,17 @@ export default function SettingsPage() {
             helpText="Optional — improves website detection accuracy."
             pendingClear={clearKeys.search}
             onClear={() => setClearKeys((c) => ({ ...c, search: true }))}
+          />
+          <ApiKeyField
+            id="netlify-token"
+            label="Netlify token"
+            configured={snapshot.hasNetlifyToken}
+            maskedValue={snapshot.netlifyToken}
+            value={netlifyToken}
+            onChange={setNetlifyToken}
+            helpText="Powers the Publish-demo-link button. Free account → User settings → Applications → New personal access token."
+            pendingClear={clearKeys.netlify}
+            onClear={() => setClearKeys((c) => ({ ...c, netlify: true }))}
           />
           <div className="space-y-1.5">
             <Label htmlFor="search-engine-id">Search engine ID</Label>

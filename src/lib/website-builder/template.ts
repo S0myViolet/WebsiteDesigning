@@ -231,12 +231,34 @@ function safeReadmeText(value: string): string {
   return value.replace(/[`\r\n]+/g, " ").trim();
 }
 
+/**
+ * Normalize a client domain ("bandungdubai.com", "https://x.ae/") into a
+ * canonical https origin. Returns null when the value isn't a plausible
+ * hostname — callers should treat that as "no production domain".
+ */
+function canonicalOrigin(domain: string): string | null {
+  const host = domain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/[/?#].*$/, "");
+  const label = "[a-z0-9]([a-z0-9-]*[a-z0-9])?";
+  if (!new RegExp(`^${label}(\\.${label})+$`).test(host)) return null;
+  return `https://${host}`;
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
 export function buildNextJsProject(input: PreviewInput): Record<string, string> {
   const { business, copy } = input;
+
+  // Production hand-off mode: only reachable through the gated final-export
+  // route (lead WON + owner approved the content). Drops the draft ribbon and
+  // disclaimer, enables indexing, and points the canonical URL at the domain.
+  const siteUrl = input.production ? canonicalOrigin(input.production.domain) : null;
+  const production = Boolean(input.production && siteUrl);
 
   const layout: LayoutType =
     input.layout ??
@@ -314,41 +336,53 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
       mapsUrl: safeHttpUrl(business.googleMapsUrl),
       mapEmbedUrl: `https://www.google.com/maps?q=${mapQuery}&output=embed`,
     },
-    draftNotice: { short: NOTE_SHORT, long: NOTE_LONG },
-    disclaimer: DISCLAIMER,
+    // Empty strings in production mode: DraftBanner is omitted from the
+    // project and SiteFooter hides the disclaimer bar when it's blank.
+    draftNotice: production
+      ? { short: "", long: "" }
+      : { short: NOTE_SHORT, long: NOTE_LONG },
+    disclaimer: production ? "" : DISCLAIMER,
   };
 
   const layoutModule = LAYOUT_MODULES[layout];
 
-  return {
-    "package.json": buildPackageJson(business.name),
+  const files: Record<string, string> = {
+    "package.json": buildPackageJson(business.name, production),
     "next.config.mjs": NEXT_CONFIG,
     "tsconfig.json": TSCONFIG,
     "postcss.config.js": POSTCSS_CONFIG,
     "tailwind.config.ts": buildTailwindConfig(tokens),
-    "README.md": buildReadme(business.name, layout, tokens, input.style ?? null),
+    "README.md": production
+      ? buildProductionReadme(business.name, layout, tokens, input.style ?? null)
+      : buildReadme(business.name, layout, tokens, input.style ?? null),
     "src/app/globals.css": buildGlobalsCss(tokens),
-    "src/app/layout.tsx": buildLayoutTsx(tokens.font),
-    "src/app/page.tsx": buildPageTsx(layoutModule),
+    "src/app/layout.tsx": buildLayoutTsx(tokens.font, siteUrl),
+    "src/app/page.tsx": buildPageTsx(layoutModule, production),
     "src/config/site.ts": buildSiteConfig(site),
-    "src/components/DraftBanner.tsx": DRAFT_BANNER_TSX,
     "src/components/SiteFooter.tsx": SITE_FOOTER_TSX,
     "src/components/Shared.tsx": SHARED_TSX,
     [layoutModule.file]: layoutModule.source,
   };
+  if (production && siteUrl) {
+    files["DEPLOY.md"] = buildDeployGuide(business.name, siteUrl);
+  } else {
+    files["src/components/DraftBanner.tsx"] = DRAFT_BANNER_TSX;
+  }
+  return files;
 }
 
 // ---------------------------------------------------------------------------
 // Data-driven files (business data injected via JSON.stringify only)
 // ---------------------------------------------------------------------------
 
-function buildPackageJson(businessName: string): string {
+function buildPackageJson(businessName: string, production: boolean): string {
   const pkg = {
     name: slugify(businessName),
-    version: "0.1.0",
+    version: production ? "1.0.0" : "0.1.0",
     private: true,
-    description:
-      "Draft website concept generated from public Google Maps data. Not for publication without the business owner's approval.",
+    description: production
+      ? `Website for ${safeReadmeText(businessName)}. Content approved by the business owner.`
+      : "Draft website concept generated from public Google Maps data. Not for publication without the business owner's approval.",
     scripts: {
       dev: "next dev",
       build: "next build",
@@ -590,9 +624,9 @@ export interface SiteConfig {
     mapsUrl: string | null;
     mapEmbedUrl: string;
   };
-  /** Slim top-ribbon notice rendered by DraftBanner. */
+  /** Slim top-ribbon concept notice (empty strings in the production export). */
   draftNotice: { short: string; long: string };
-  /** Full disclaimer sentence rendered in the footer bar. */
+  /** Disclaimer sentence in the footer bar (empty = hidden, production export). */
   disclaimer: string;
 }
 
@@ -679,6 +713,140 @@ shots. Put images in \`public/\` and swap the gradient \`<div>\`s for
 `;
 }
 
+/**
+ * README for the approved production export: no draft warnings (the export is
+ * gated on the owner's content approval), plus a pointer to DEPLOY.md.
+ */
+function buildProductionReadme(
+  businessName: string,
+  layout: LayoutType,
+  tokens: StyleTokens,
+  style: VisualStyleJson | null
+): string {
+  const safeName = safeReadmeText(businessName);
+  const layoutLabel = LAYOUT_TYPE_LABELS[layout];
+  const styleName = style ? safeReadmeText(style.style_name) : "";
+  const c = tokens.colors;
+  return `# ${safeName} — website
+
+Production build of the website for **${safeName}**. Content was reviewed and
+approved by the business owner before this export was generated.
+
+See **DEPLOY.md** for the step-by-step guide to putting this live on the
+client's domain (Cloudflare Pages + Cloudflare Registrar).
+
+## Getting started
+
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+
+Then open http://localhost:3000.
+
+## Production build
+
+\`\`\`bash
+npm run build
+npm run start
+\`\`\`
+
+## Layout & style
+
+| Token | Value |
+| --- | --- |
+| Layout variant | \`${layout}\` (${layoutLabel}) |${styleName ? `\n| Style name | ${styleName} |` : ""}
+| Colors | primary \`${c.primary}\` · secondary \`${c.secondary}\` · accent \`${c.accent}\` · background \`${c.background}\` · surface \`${c.surface}\` · text \`${c.text}\` |
+| Font pairing | ${tokens.font.label} (Google Fonts with system fallback) |
+| Button radius | \`${tokens.buttonRadius}\` |
+| Section spacing | ${tokens.sectionSpacing} |
+
+## Editing content
+
+All text, contact links, and style tokens live in a single typed config
+object: \`src/config/site.ts\`. The components in \`src/components/\` are fully
+data-driven from that file, so most changes only require editing \`SITE\`.
+
+## Before going live — final checklist
+
+- Replace the **gradient placeholder panels** with real photos of the business
+  (\`SITE.copy.imageRecommendations\` lists suggested shots). Put images in
+  \`public/\` and swap the gradient \`<div>\`s for \`next/image\` components.
+- The booking/quote form is a **non-functional demo** (submit is disabled) —
+  wire it to a form service or remove it.
+- Re-confirm phone number, address, and opening hours with the owner.
+- Testimonials are paraphrased from public reviews; confirm the owner is
+  happy with each one (or replace them with quotes the owner provides).
+`;
+}
+
+/**
+ * Cloudflare deploy guide bundled only with the production export. Documents
+ * the agreed domain model: domain bought at cost via Cloudflare Registrar,
+ * managed for the client, with a standing free-transfer promise.
+ */
+function buildDeployGuide(businessName: string, siteUrl: string): string {
+  const safeName = safeReadmeText(businessName);
+  const host = siteUrl.replace(/^https:\/\//, "");
+  return `# Deploying ${safeName} to ${host}
+
+This site is a static-friendly Next.js app. The recommended (free) setup is
+**Cloudflare Pages** for hosting and **Cloudflare Registrar** for the domain.
+
+## 1. Buy the domain (Cloudflare Registrar)
+
+1. Sign in at https://dash.cloudflare.com → **Domain Registration → Register domain**.
+2. Search for \`${host}\` and buy it. Cloudflare sells at wholesale cost
+   (roughly AED 40/year for a .com) with WHOIS privacy included.
+3. Keep the domain in your Cloudflare account — you manage it for the client
+   as part of their annual care plan.
+
+> **Client ownership promise:** the domain is registered for the client and
+> transfers to them free of charge whenever they ask. Put that in writing in
+> your agreement — it removes the "but do I own it?" objection.
+
+## 2. Create the Pages project
+
+1. In the Cloudflare dashboard: **Workers & Pages → Create → Pages**.
+2. Either connect a Git repository containing this folder, or use
+   **Direct Upload** with the build output:
+
+\`\`\`bash
+npm install
+npx next build
+\`\`\`
+
+3. Build settings when connecting Git: framework preset **Next.js**,
+   build command \`npx next build\`.
+
+## 3. Attach the custom domain
+
+1. In the Pages project: **Custom domains → Set up a custom domain**.
+2. Enter \`${host}\`. Because the domain is already on Cloudflare, the DNS
+   record is created automatically and HTTPS is issued within minutes.
+3. Add the \`www.\` variant too and redirect it to the apex (Pages offers
+   this in the same flow).
+
+## 4. After it's live
+
+- Verify ${siteUrl} loads with a valid certificate.
+- Submit the site at https://search.google.com/search-console (URL-prefix
+  property, DNS verification is automatic on Cloudflare).
+- Update the business's Google Maps profile with the new website URL —
+  that link is the main way customers will find the site.
+- Optional: professional email on the domain via Zoho Mail's free tier or
+  Cloudflare Email Routing (forwarding to the owner's existing inbox).
+
+## Costs
+
+| Item | Cost |
+| --- | --- |
+| Cloudflare Pages hosting | Free (commercial use allowed) |
+| Domain (.com via Cloudflare Registrar) | ~AED 40/year at cost |
+| HTTPS certificate | Free (automatic) |
+`;
+}
+
 // ---------------------------------------------------------------------------
 // Static project files (no interpolated user data)
 // ---------------------------------------------------------------------------
@@ -729,13 +897,29 @@ const POSTCSS_CONFIG = `module.exports = {
  * stylesheet links. The href comes from the fixed FONT_PAIRINGS table (never
  * from business data or AI output).
  */
-function buildLayoutTsx(font: FontPairing): string {
-  return `/*
+function buildLayoutTsx(font: FontPairing, siteUrl: string | null): string {
+  const header = siteUrl
+    ? ""
+    : `/*
  * DRAFT WEBSITE CONCEPT — generated from public Google Maps profile data as a
  * demo for the business owner. Not the official website of this business.
  * Do NOT publish without the business owner's explicit approval.
  */
-import type { Metadata } from "next";
+`;
+  // Draft exports are noindexed; the approved production export is indexable
+  // with the client's domain as canonical URL.
+  const metadataExtras = siteUrl
+    ? `  metadataBase: new URL(${JSON.stringify(siteUrl)}),
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: SITE.copy.seoTitle,
+    description: SITE.copy.seoMetaDescription,
+    url: "/",
+    siteName: SITE.copy.websiteName,
+    type: "website",
+  },`
+    : `  robots: { index: false, follow: false },`;
+  return `${header}import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { SITE } from "@/config/site";
 import "./globals.css";
@@ -743,7 +927,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: SITE.copy.seoTitle,
   description: SITE.copy.seoMetaDescription,
-  robots: { index: false, follow: false },
+${metadataExtras}
 };
 
 // Curated font pairing (${font.label}), loaded with font-display: swap;
@@ -796,7 +980,8 @@ export function DraftBanner() {
 `;
 
 const SITE_FOOTER_TSX = `// Premium multi-column footer: brand | contact links | visit details, plus
-// the permanent draft-disclaimer bar. Fully data-driven from SITE.
+// the draft-disclaimer bar (hidden when SITE.disclaimer is empty — i.e. in
+// the approved production export). Fully data-driven from SITE.
 import { SITE } from "@/config/site";
 
 export function SiteFooter() {
@@ -868,11 +1053,13 @@ export function SiteFooter() {
           </div>
         </div>
       </div>
-      <div className="border-t border-text/10 bg-background">
-        <p className="mx-auto max-w-6xl px-5 py-4 text-xs leading-relaxed text-text/60">
-          {SITE.disclaimer}
-        </p>
-      </div>
+      {SITE.disclaimer ? (
+        <div className="border-t border-text/10 bg-background">
+          <p className="mx-auto max-w-6xl px-5 py-4 text-xs leading-relaxed text-text/60">
+            {SITE.disclaimer}
+          </p>
+        </div>
+      ) : null}
     </footer>
   );
 }
@@ -2566,17 +2753,19 @@ const LAYOUT_MODULES: Record<LayoutType, LayoutModule> = {
  * footer (with the full disclaimer bar) + the mobile sticky contact bar
  * (renders null when no phone links exist).
  */
-function buildPageTsx(mod: LayoutModule): string {
-  return `import { DraftBanner } from "@/components/DraftBanner";
-import { StickyContactBar } from "@/components/Shared";
+function buildPageTsx(mod: LayoutModule, production: boolean): string {
+  const bannerImport = production
+    ? ""
+    : `import { DraftBanner } from "@/components/DraftBanner";\n`;
+  const banner = production ? "" : `      <DraftBanner />\n`;
+  return `${bannerImport}import { StickyContactBar } from "@/components/Shared";
 import { SiteFooter } from "@/components/SiteFooter";
 import { ${mod.component} } from "${mod.importPath}";
 
 export default function HomePage() {
   return (
     <>
-      <DraftBanner />
-      <${mod.component} />
+${banner}      <${mod.component} />
       <SiteFooter />
       <StickyContactBar />
     </>
