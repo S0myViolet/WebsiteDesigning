@@ -26,13 +26,6 @@ interface NetlifySite {
   url?: string;
 }
 
-interface NetlifyDeploy {
-  id: string;
-  state?: string;
-  ssl_url?: string;
-  url?: string;
-}
-
 function slugify(value: string): string {
   return (
     value
@@ -63,6 +56,10 @@ export async function publishDemo(args: {
 }): Promise<{ url: string; siteId: string }> {
   const zip = new JSZip();
   zip.file("index.html", args.html);
+  // The robots.txt keeps crawlers away from the demo AND works around a
+  // Netlify quirk: a zip with a single entry is unpacked to a nameless root
+  // file (served as text/plain), while multi-file zips unpack correctly.
+  zip.file("robots.txt", "User-agent: *\nDisallow: /\n");
   const body = await zip.generateAsync({ type: "nodebuffer" });
 
   const headers = {
@@ -70,8 +67,7 @@ export async function publishDemo(args: {
     "Content-Type": "application/zip",
   };
 
-  let site: NetlifySite;
-  let deploy: NetlifyDeploy | null = null;
+  let siteId: string;
 
   if (args.siteId) {
     // Re-publish to the existing site (same URL).
@@ -82,17 +78,16 @@ export async function publishDemo(args: {
     });
     if (res.status === 404) {
       // Site was deleted on Netlify — fall through to creating a fresh one.
-      site = await createSite();
+      siteId = await createSite();
     } else {
       if (!res.ok) throw new Error(await readError(res));
-      deploy = (await res.json()) as NetlifyDeploy;
-      site = { id: args.siteId, ssl_url: deploy.ssl_url, url: deploy.url };
+      siteId = args.siteId;
     }
   } else {
-    site = await createSite();
+    siteId = await createSite();
   }
 
-  async function createSite(): Promise<NetlifySite> {
+  async function createSite(): Promise<string> {
     // Random suffix makes the URL unguessable (privacy for the prospect).
     const name = `${slugify(args.businessName)}-${Math.random().toString(36).slice(2, 8)}`;
     const res = await proxiedFetch(`${API}/sites?name=${encodeURIComponent(name)}`, {
@@ -101,10 +96,19 @@ export async function publishDemo(args: {
       body,
     });
     if (!res.ok) throw new Error(await readError(res));
-    return (await res.json()) as NetlifySite;
+    const site = (await res.json()) as NetlifySite;
+    return site.id;
   }
+
+  // Deploy/create responses sometimes carry a deploy-specific or http URL, so
+  // always resolve the stable https site URL from the site record itself.
+  const siteRes = await proxiedFetch(`${API}/sites/${siteId}`, {
+    headers: { Authorization: `Bearer ${args.token}` },
+  });
+  if (!siteRes.ok) throw new Error(await readError(siteRes));
+  const site = (await siteRes.json()) as NetlifySite;
 
   const url = site.ssl_url || site.url;
   if (!url) throw new Error("Netlify did not return a site URL.");
-  return { url, siteId: site.id };
+  return { url, siteId };
 }
