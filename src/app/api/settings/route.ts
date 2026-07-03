@@ -24,6 +24,7 @@ const referenceSiteSchema = z.object({
 const settingsSchema = z
   .object({
     googleMapsApiKey: z.string(),
+    anthropicApiKey: z.string(),
     openaiApiKey: z.string(),
     searchApiKey: z.string(),
     searchEngineId: z.string(),
@@ -41,7 +42,13 @@ const settingsSchema = z
   })
   .partial();
 
-const API_KEY_FIELDS = ["googleMapsApiKey", "openaiApiKey", "searchApiKey", "netlifyToken"] as const;
+const API_KEY_FIELDS = [
+  "googleMapsApiKey",
+  "anthropicApiKey",
+  "openaiApiKey",
+  "searchApiKey",
+  "netlifyToken",
+] as const;
 
 export async function GET() {
   try {

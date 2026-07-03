@@ -223,7 +223,13 @@ export const WEBSITE_STYLE_OPTIONS = [
   "Clean & professional",
 ] as const;
 
-export const AI_MODEL_OPTIONS = ["gpt-4o", "gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"] as const;
+export const AI_MODEL_OPTIONS = [
+  "claude-opus-4-8",
+  "claude-sonnet-5",
+  "claude-haiku-4-5",
+  "gpt-4o",
+  "gpt-4o-mini",
+] as const;
 
 /**
  * Default design-benchmark references (hospitality). Used ONLY as a quality
@@ -359,10 +365,11 @@ export const DEFAULT_SETTINGS = {
   includeChains: false,
   includeUncertainWebsites: false,
   defaultWebsiteStyle: "Modern & minimal",
-  // gpt-4o by default: the design brief, agency-voice copy, and quality gate
-  // need the stronger model; a full site generation still costs only a few
-  // cents. Switchable to gpt-4o-mini in Settings for cheaper bulk runs.
-  aiModel: "gpt-4o",
+  // Claude Opus 4.8 by default: the design brief, agency-voice copy, vision
+  // passes, and quality gate all benefit from the strongest model. Switchable
+  // in Settings — claude-sonnet-5 is the cheaper Claude tier, and the gpt-*
+  // options keep an existing OpenAI key working.
+  aiModel: "claude-opus-4-8",
   exportColumns: [
     "name",
     "category",

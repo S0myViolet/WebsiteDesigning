@@ -569,6 +569,9 @@ export interface WebsiteCopyJson {
 /** App settings; DB overrides are merged over env values and defaults. */
 export interface AppSettings {
   googleMapsApiKey: string;
+  /** Claude (Anthropic) API key — used when aiModel is a claude-* model */
+  anthropicApiKey: string;
+  /** OpenAI API key — used when aiModel is a gpt-* model */
   openaiApiKey: string;
   searchApiKey: string;
   searchEngineId: string;

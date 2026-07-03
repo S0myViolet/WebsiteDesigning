@@ -16,6 +16,7 @@ import { toJsonField } from "@/lib/utils";
 import { extractReviewKeywords } from "@/lib/keywords";
 import { computeOpportunityScore } from "@/lib/scoring";
 import { analyzeBusiness, type BusinessAnalysisInput } from "@/lib/ai/analysis";
+import { resolveAiCredentials } from "@/lib/ai/anthropic-client";
 import { LEAD_STATUS_VALUES } from "@/lib/constants";
 import {
   parseJsonField,
@@ -353,8 +354,9 @@ export async function runAnalysis(businessId: string): Promise<RunAnalysisResult
   }
 
   const settings = await getSettings();
-  if (!settings.openaiApiKey) {
-    throw new HttpError(400, "Add your OpenAI API key in Settings or .env");
+  const credentials = resolveAiCredentials(settings);
+  if (credentials.missingKeyError) {
+    throw new HttpError(400, credentials.missingKeyError);
   }
 
   const reviewTexts = business.reviews
@@ -383,8 +385,8 @@ export async function runAnalysis(businessId: string): Promise<RunAnalysisResult
   };
 
   const analysisJson = await analyzeBusiness(input, {
-    apiKey: settings.openaiApiKey,
-    model: settings.aiModel,
+    apiKey: credentials.apiKey,
+    model: credentials.model,
   });
 
   const score = computeOpportunityScore({

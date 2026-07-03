@@ -18,6 +18,7 @@ export async function getSettings(): Promise<AppSettings> {
 
   const base: AppSettings = {
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "",
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
     openaiApiKey: process.env.OPENAI_API_KEY || "",
     searchApiKey: process.env.SEARCH_API_KEY || "",
     searchEngineId: process.env.SEARCH_ENGINE_ID || "",
@@ -64,6 +65,7 @@ export const KEY_MASK = "••••••••";
  */
 export function maskSettings(settings: AppSettings): AppSettings & {
   hasGoogleKey: boolean;
+  hasAnthropicKey: boolean;
   hasOpenaiKey: boolean;
   hasSearchKey: boolean;
   hasNetlifyToken: boolean;
@@ -72,10 +74,12 @@ export function maskSettings(settings: AppSettings): AppSettings & {
   return {
     ...settings,
     googleMapsApiKey: mask(settings.googleMapsApiKey),
+    anthropicApiKey: mask(settings.anthropicApiKey),
     openaiApiKey: mask(settings.openaiApiKey),
     searchApiKey: mask(settings.searchApiKey),
     netlifyToken: mask(settings.netlifyToken),
     hasGoogleKey: Boolean(settings.googleMapsApiKey),
+    hasAnthropicKey: Boolean(settings.anthropicApiKey),
     hasOpenaiKey: Boolean(settings.openaiApiKey),
     hasSearchKey: Boolean(settings.searchApiKey),
     hasNetlifyToken: Boolean(settings.netlifyToken),

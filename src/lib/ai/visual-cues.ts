@@ -10,7 +10,7 @@
 
 import { fetch as undiciFetch, ProxyAgent } from "undici";
 import { z } from "zod";
-import { getOpenAI } from "@/lib/ai/openai-client";
+import { visionJson } from "@/lib/ai/openai-client";
 import type { PhotoMeta, VisualCuesJson } from "@/lib/types";
 
 /** Route through HTTPS_PROXY when set (sandboxes/corporate networks). */
@@ -84,16 +84,20 @@ export async function extractVisualCues(args: {
 }): Promise<VisualCuesJson | null> {
   if (args.photoDataUrls.length === 0) return null;
 
-  const client = getOpenAI(args.apiKey);
-  const completion = await client.chat.completions.create({
-    model: args.model,
-    response_format: { type: "json_object" },
-    temperature: 0.3,
-    max_tokens: 800,
-    messages: [
-      {
-        role: "system",
-        content: `You are a brand designer analyzing a business's real public photos to ground a website design in how the place actually looks. Be literal about what you see — do not invent. Respond with VALID JSON ONLY:
+  let raw: unknown;
+  try {
+    raw = await visionJson<unknown>({
+      apiKey: args.apiKey,
+      model: args.model,
+      temperature: 0.3,
+      maxTokens: 800,
+      detail: "low",
+      imageDataUrls: args.photoDataUrls,
+      text: `Business: ${args.businessName} — ${args.category}. Review snippets for context:\n${args.reviewSnippets
+        .slice(0, 4)
+        .map((s) => `- ${s.slice(0, 160)}`)
+        .join("\n")}\n\nAnalyze these photos of the actual venue:`,
+      system: `You are a brand designer analyzing a business's real public photos to ground a website design in how the place actually looks. Be literal about what you see — do not invent. Respond with VALID JSON ONLY:
 {
   "dominant_colors": string[],   // 2-4 hex colors that dominate the venue/photos
   "accent_colors": string[],     // 1-3 hex accent colors actually visible
@@ -104,31 +108,7 @@ export async function extractVisualCues(args: {
   "vibe_cues": string[],         // 3-5 short observations ("open charcoal grill", "family booths")
   "notes": string                // one sentence on what the design should echo
 }`,
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text" as const,
-            text: `Business: ${args.businessName} — ${args.category}. Review snippets for context:\n${args.reviewSnippets
-              .slice(0, 4)
-              .map((s) => `- ${s.slice(0, 160)}`)
-              .join("\n")}\n\nAnalyze these photos of the actual venue:`,
-          },
-          ...args.photoDataUrls.map((url) => ({
-            type: "image_url" as const,
-            image_url: { url, detail: "low" as const },
-          })),
-        ],
-      },
-    ],
-  });
-
-  const content = completion.choices[0]?.message?.content;
-  if (!content) return null;
-  let raw: unknown;
-  try {
-    raw = JSON.parse(content);
+    });
   } catch {
     return null;
   }

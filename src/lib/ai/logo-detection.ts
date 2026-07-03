@@ -13,7 +13,7 @@
 
 import Jimp from "jimp";
 import { z } from "zod";
-import { getOpenAI } from "@/lib/ai/openai-client";
+import { visionJson } from "@/lib/ai/openai-client";
 import type {
   BrandIdentityJson,
   BrandLogoAsset,
@@ -121,7 +121,7 @@ export async function localizeByGrid(args: {
   target: string;
   rows: number;
   cols: number;
-  client: ReturnType<typeof getOpenAI>;
+  apiKey: string;
   model: string;
 }): Promise<Box | null> {
   const { region, rows, cols } = args;
@@ -164,31 +164,18 @@ export async function localizeByGrid(args: {
   }
   const png = await crop.getBufferAsync(Jimp.MIME_PNG);
 
-  const completion = await args.client.chat.completions.create({
-    model: args.model,
-    response_format: { type: "json_object" },
-    temperature: 0,
-    max_tokens: 150,
-    messages: [
-      {
-        role: "system",
-        content: `The image has a numbered ${rows}x${cols} grid overlay (1 = top-left, numbering row by row). Identify which cells the TARGET covers. Respond with VALID JSON ONLY: {"cells": number[]} — every cell the target touches, [] if it is not visible.`,
-      },
-      {
-        role: "user",
-        content: [
-          { type: "text" as const, text: `Target: ${args.target}` },
-          {
-            type: "image_url" as const,
-            image_url: { url: `data:image/png;base64,${png.toString("base64")}`, detail: "high" as const },
-          },
-        ],
-      },
-    ],
-  });
   let cells: number[];
   try {
-    const raw = JSON.parse(completion.choices[0]?.message?.content ?? "{}") as { cells?: unknown };
+    const raw = await visionJson<{ cells?: unknown }>({
+      apiKey: args.apiKey,
+      model: args.model,
+      temperature: 0,
+      maxTokens: 150,
+      detail: "high",
+      system: `The image has a numbered ${rows}x${cols} grid overlay (1 = top-left, numbering row by row). Identify which cells the TARGET covers. Respond with VALID JSON ONLY: {"cells": number[]} — every cell the target touches, [] if it is not visible.`,
+      text: `Target: ${args.target}`,
+      imageDataUrls: [`data:image/png;base64,${png.toString("base64")}`],
+    });
     cells = z.array(z.number().int().min(1).max(rows * cols)).catch([]).parse(raw.cells);
   } catch {
     return null;
@@ -332,16 +319,15 @@ export async function extractBrandIdentity(args: {
     return emptyBrandIdentity(0, "No public photos available to scan for a logo.");
   }
 
-  const client = getOpenAI(args.apiKey);
-  const completion = await client.chat.completions.create({
-    model: args.model,
-    response_format: { type: "json_object" },
-    temperature: 0.2,
-    max_tokens: 1200,
-    messages: [
-      {
-        role: "system",
-        content: `You are a brand-identity analyst. Scan the numbered photos of a business for its REAL logo or wordmark: storefront signs, entrance signage, menu covers/headers, wall marks, branded packaging, receipts. Report every plausible candidate with a bounding box. NEVER invent a logo — if none is visible, return an empty candidates array. Respond with VALID JSON ONLY:
+  let parsed: z.infer<typeof detectionSchema>;
+  try {
+    const raw = await visionJson<unknown>({
+      apiKey: args.apiKey,
+      model: args.model,
+      temperature: 0.2,
+      maxTokens: 1200,
+      detail: "high",
+      system: `You are a brand-identity analyst. Scan the numbered photos of a business for its REAL logo or wordmark: storefront signs, entrance signage, menu covers/headers, wall marks, branded packaging, receipts. Report every plausible candidate with a bounding box. NEVER invent a logo — if none is visible, return an empty candidates array. Respond with VALID JSON ONLY:
 {
   "candidates": [{
     "photo_index": number,          // 0-based index of the photo
@@ -356,27 +342,10 @@ export async function extractBrandIdentity(args: {
   "background_recommendation": string,  // light or dark site background suits this brand
   "usage_recommendation": string    // one sentence on tasteful use
 }`,
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text" as const,
-            text: `Business: "${args.businessName}" — ${args.category}. Find its logo/wordmark in these ${args.photoDataUrls.length} photos:`,
-          },
-          ...args.photoDataUrls.map((url) => ({
-            type: "image_url" as const,
-            image_url: { url, detail: "high" as const },
-          })),
-        ],
-      },
-    ],
-  });
-
-  const content = completion.choices[0]?.message?.content;
-  let parsed: z.infer<typeof detectionSchema>;
-  try {
-    parsed = detectionSchema.parse(JSON.parse(content ?? "{}"));
+      text: `Business: "${args.businessName}" — ${args.category}. Find its logo/wordmark in these ${args.photoDataUrls.length} photos:`,
+      imageDataUrls: args.photoDataUrls,
+    });
+    parsed = detectionSchema.parse(raw);
   } catch {
     return emptyBrandIdentity(args.photoDataUrls.length, "Logo scan returned an unreadable response.");
   }
@@ -412,33 +381,19 @@ export async function extractBrandIdentity(args: {
   // candidate. Vision bounding boxes are approximate — this loop is what
   // turns "roughly there" into a presentable asset.
   const verifyCrop = async (asset: BrandLogoAsset) => {
-    const verifyCompletion = await client.chat.completions.create({
+    const raw = await visionJson<unknown>({
+      apiKey: args.apiKey,
       model: args.model,
-      response_format: { type: "json_object" },
       temperature: 0,
-      max_tokens: 300,
-      messages: [
-        {
-          role: "system",
-          content: `Verify a cropped image intended for a website header. Respond with VALID JSON ONLY:
+      maxTokens: 300,
+      detail: "low",
+      system: `Verify a cropped image intended for a website header. Respond with VALID JSON ONLY:
 {"is_logo": boolean, "belongs_to_business": boolean, "readable_text": string, "clean_crop": boolean, "refine_box": {"x":n,"y":n,"w":n,"h":n} | null}
 clean_crop = presentable as a header logo (tight around the mark, not mostly background clutter, not unreadable). When the mark IS present but the crop is loose or off-center, set clean_crop=false and return refine_box — the tight bounding box of the mark within THIS image, in percent of THIS image. Return refine_box=null when no usable mark is visible at all.`,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text" as const,
-              text: `Is this a clean crop of the logo/wordmark of "${args.businessName}" (${args.category})?`,
-            },
-            { type: "image_url" as const, image_url: { url: asset.dataUrl, detail: "low" as const } },
-          ],
-        },
-      ],
+      text: `Is this a clean crop of the logo/wordmark of "${args.businessName}" (${args.category})?`,
+      imageDataUrls: [asset.dataUrl],
     });
-    return verifySchema.parse(
-      JSON.parse(verifyCompletion.choices[0]?.message?.content ?? "{}")
-    );
+    return verifySchema.parse(raw);
   };
 
   for (const candidate of ranked.slice(0, 3)) {
@@ -462,7 +417,7 @@ clean_crop = presentable as a header logo (tight around the mark, not mostly bac
         target,
         rows: 4,
         cols: 4,
-        client,
+        apiKey: args.apiKey,
         model: args.model,
       });
       if (box) {
@@ -472,7 +427,7 @@ clean_crop = presentable as a header logo (tight around the mark, not mostly bac
           target,
           rows: 3,
           cols: 3,
-          client,
+          apiKey: args.apiKey,
           model: args.model,
         });
         if (tighter) box = tighter;

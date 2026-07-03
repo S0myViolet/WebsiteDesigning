@@ -35,6 +35,7 @@ import {
   fetchPlacePhotoDataUrls,
 } from "@/lib/ai/visual-cues";
 import { extractBrandIdentity } from "@/lib/ai/logo-detection";
+import { resolveAiCredentials } from "@/lib/ai/anthropic-client";
 import { isHospitalityCategory } from "@/lib/constants";
 import {
   clearGenerationProgress,
@@ -158,13 +159,11 @@ export async function POST(
     }
 
     const settings = await getSettings();
-    if (!settings.openaiApiKey) {
-      return NextResponse.json(
-        { error: "Add your OpenAI API key in Settings or .env" },
-        { status: 400 }
-      );
+    const credentials = resolveAiCredentials(settings);
+    if (credentials.missingKeyError) {
+      return NextResponse.json({ error: credentials.missingKeyError }, { status: 400 });
     }
-    const ai = { apiKey: settings.openaiApiKey, model: settings.aiModel };
+    const ai = { apiKey: credentials.apiKey, model: credentials.model };
 
     // ---- Steps 1+3: business data + review analysis (auto-run if missing) --
     let analysisJson: AnalysisJson;
@@ -264,8 +263,8 @@ export async function POST(
           businessName: business.name,
           category: business.category,
           reviewSnippets: input.reviews.map((r) => r.text),
-          apiKey: settings.openaiApiKey,
-          model: settings.aiModel,
+          apiKey: ai.apiKey,
+          model: ai.model,
         });
       } catch {
         visualCues = null; // photos unavailable — infer from category/reviews
@@ -293,8 +292,8 @@ export async function POST(
             photoRefs: photoMetas.map((m) => m.name),
             businessName: business.name,
             category: business.category,
-            apiKey: settings.openaiApiKey,
-            model: settings.aiModel,
+            apiKey: ai.apiKey,
+            model: ai.model,
           });
           await prisma.business.update({
             where: { id: business.id },

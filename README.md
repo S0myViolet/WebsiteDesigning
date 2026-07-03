@@ -21,7 +21,7 @@ Dubai Lead Gen finds Dubai businesses that already have a strong Google Maps pre
 - Optional verification step via Google Custom Search JSON API (Programmable Search Engine): searches for the business name + area + phone and classifies the result as `LIKELY_MISSING`, `POSSIBLY_EXISTS`, `WEBSITE_FOUND`, or `NEEDS_MANUAL_REVIEW`, with human-readable evidence for each decision.
 
 ### 3. AI review analysis
-- Sends the stored review sample, editorial summary, and profile data to OpenAI (default `gpt-4o-mini`, configurable) with a strict, grounded prompt.
+- Sends the stored review sample, editorial summary, and profile data to the Claude API (default `claude-opus-4-8`, configurable; OpenAI GPT models also selectable) with a strict, grounded prompt.
 - Produces structured JSON: business summary, main services, target customers, customer praise and complaints, tone, website positioning, recommended site sections, SEO keywords, local SEO phrases, and a suggested CTA.
 - Deterministic keyword extraction from review text (stopword-filtered, recurring terms only) runs independently of the AI.
 
@@ -72,7 +72,7 @@ The generator page doubles as a sales-demo tool: quality score with audit checks
 | Language | TypeScript (strict) |
 | Styling | Tailwind CSS (shadcn-style design tokens), lucide-react icons |
 | Database | Prisma ORM — SQLite by default, PostgreSQL-compatible schema |
-| AI | OpenAI API (`gpt-4o-mini` default; `gpt-4o`, `gpt-4.1-mini`, `gpt-4.1` selectable) |
+| AI | Claude API via `@anthropic-ai/sdk` (`claude-opus-4-8` default; `claude-sonnet-5`, `claude-haiku-4-5` selectable) — OpenAI (`gpt-4o`, `gpt-4o-mini`) selectable as fallback |
 | Discovery | Google Places API (New): Text Search + Place Details |
 | Verification (optional) | Google Custom Search JSON API (Programmable Search Engine) |
 | Tables / forms | @tanstack/react-table, react-hook-form, zod |
@@ -134,7 +134,8 @@ The generator page doubles as a sales-demo tool: quality score with audit checks
 │       ├── csv.ts                 # CSV export
 │       ├── utils.ts               # cn, toJsonField, phone/WhatsApp helpers
 │       ├── ai/
-│       │   ├── openai-client.ts
+│       │   ├── anthropic-client.ts # Claude API client (default provider)
+│       │   ├── openai-client.ts   # Provider router + OpenAI client
 │       │   ├── copy-rules.ts      # Grounding prompt rules + banned-phrase sanitizer
 │       │   ├── analysis.ts        # Review analysis (AnalysisJson)
 │       │   └── website-copy.ts    # Website copy generation (WebsiteCopyJson)
@@ -215,7 +216,9 @@ All error responses are JSON `{ "error": string }` with an appropriate status co
 
    Fill in at minimum:
    - `GOOGLE_MAPS_API_KEY` — a Google Maps Platform key with **Places API (New)** enabled.
-   - `OPENAI_API_KEY` — for review analysis and website copy generation.
+   - `ANTHROPIC_API_KEY` — Claude API key for review analysis, design and website copy generation (console.anthropic.com → API keys).
+
+   Optional AI fallback: `OPENAI_API_KEY` — only needed if you switch the AI model in Settings to a GPT model.
 
    Optional: `SEARCH_API_KEY` + `SEARCH_ENGINE_ID` (Custom Search website verification), `NETLIFY_TOKEN` (the Publish-demo-link button — free personal access token from Netlify → User settings → Applications), `ADMIN_EMAIL` + `ADMIN_PASSWORD` + `AUTH_SECRET` (login), `NEXT_PUBLIC_APP_URL`. Keys can also be entered later on the in-app Settings page.
 
@@ -282,7 +285,8 @@ Deploy to Vercel: import the repo, then set these environment variables in the V
 | --- | --- |
 | `DATABASE_URL` | Yes (Postgres connection string) |
 | `GOOGLE_MAPS_API_KEY` | Yes |
-| `OPENAI_API_KEY` | Yes |
+| `ANTHROPIC_API_KEY` | Yes (default Claude models) |
+| `OPENAI_API_KEY` | Optional (only for GPT models) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `AUTH_SECRET` | Strongly recommended (enables login) |
 | `NEXT_PUBLIC_APP_URL` | Recommended (your deployed URL) |
 | `SEARCH_API_KEY`, `SEARCH_ENGINE_ID` | Optional (website verification) |

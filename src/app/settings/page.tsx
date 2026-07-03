@@ -38,6 +38,7 @@ import { EXPORTABLE_COLUMNS } from "@/lib/csv";
 
 interface MaskedSettings extends AppSettings {
   hasGoogleKey: boolean;
+  hasAnthropicKey: boolean;
   hasOpenaiKey: boolean;
   hasSearchKey: boolean;
   hasNetlifyToken: boolean;
@@ -74,6 +75,7 @@ export default function SettingsPage() {
 
   // API keys (start empty; masked values shown as placeholders)
   const [googleKey, setGoogleKey] = React.useState("");
+  const [anthropicKey, setAnthropicKey] = React.useState("");
   const [openaiKey, setOpenaiKey] = React.useState("");
   const [searchKey, setSearchKey] = React.useState("");
   const [netlifyToken, setNetlifyToken] = React.useState("");
@@ -82,10 +84,17 @@ export default function SettingsPage() {
   // cleared and getSettings falls back to the env var).
   const [clearKeys, setClearKeys] = React.useState<{
     google: boolean;
+    anthropic: boolean;
     openai: boolean;
     search: boolean;
     netlify: boolean;
-  }>({ google: false, openai: false, search: false, netlify: false });
+  }>({
+    google: false,
+    anthropic: false,
+    openai: false,
+    search: false,
+    netlify: false,
+  });
 
   // Discovery defaults
   const [minReviews, setMinReviews] = React.useState("50");
@@ -121,11 +130,13 @@ export default function SettingsPage() {
   const applyLoaded = React.useCallback((data: MaskedSettings) => {
     setSnapshot(data);
     setGoogleKey("");
+    setAnthropicKey("");
     setOpenaiKey("");
     setSearchKey("");
     setNetlifyToken("");
     setClearKeys({
       google: false,
+      anthropic: false,
       openai: false,
       search: false,
       netlify: false,
@@ -179,6 +190,8 @@ export default function SettingsPage() {
     // sends "" (removes the stored override) unless a new key was typed.
     if (isNewKey(googleKey)) payload.googleMapsApiKey = googleKey.trim();
     else if (clearKeys.google) payload.googleMapsApiKey = "";
+    if (isNewKey(anthropicKey)) payload.anthropicApiKey = anthropicKey.trim();
+    else if (clearKeys.anthropic) payload.anthropicApiKey = "";
     if (isNewKey(openaiKey)) payload.openaiApiKey = openaiKey.trim();
     else if (clearKeys.openai) payload.openaiApiKey = "";
     if (isNewKey(searchKey)) payload.searchApiKey = searchKey.trim();
@@ -402,13 +415,24 @@ export default function SettingsPage() {
             onClear={() => setClearKeys((c) => ({ ...c, google: true }))}
           />
           <ApiKeyField
+            id="anthropic-key"
+            label="Claude API key (Anthropic)"
+            configured={snapshot.hasAnthropicKey}
+            maskedValue={snapshot.anthropicApiKey}
+            value={anthropicKey}
+            onChange={setAnthropicKey}
+            helpText="Powers analysis, copy, design and vision when a Claude model is selected (the default). Create one at console.anthropic.com → API keys."
+            pendingClear={clearKeys.anthropic}
+            onClear={() => setClearKeys((c) => ({ ...c, anthropic: true }))}
+          />
+          <ApiKeyField
             id="openai-key"
             label="OpenAI API key"
             configured={snapshot.hasOpenaiKey}
             maskedValue={snapshot.openaiApiKey}
             value={openaiKey}
             onChange={setOpenaiKey}
-            helpText="Required for review analysis and website copy generation."
+            helpText="Only needed if you switch the AI model below to a GPT model."
             pendingClear={clearKeys.openai}
             onClear={() => setClearKeys((c) => ({ ...c, openai: true }))}
           />
