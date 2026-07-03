@@ -1,6 +1,7 @@
 // Response shapes returned by the API routes and consumed by the dashboard UI.
 import type {
   AnalysisJson,
+  BrandIdentityJson,
   HandoffChecklist,
   BusinessListItem,
   CreativeDirectionJson,
@@ -113,6 +114,8 @@ export interface BusinessDetail extends BusinessListItem {
   lead: LeadStatusDto | null;
   /** Compliant public-research findings (sources + snippets), when run */
   research: ResearchResult | null;
+  /** Logo / brand identity extraction result (null = not scanned yet) */
+  brandIdentity: BrandIdentityJson | null;
 }
 
 export interface BusinessListResponse {

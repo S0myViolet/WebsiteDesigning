@@ -386,6 +386,15 @@ export interface QualityReportJson {
   design_notes?: string[];
   /** Highest-impact fixes, ordered (drives the improvement loop) */
   priority_fixes?: string[];
+  /** Brand-identity audit (present when a brand extraction exists) */
+  brand_checks?: {
+    logo_used_if_available: boolean;
+    brand_palette_matches_sources: boolean;
+    visual_identity_confidence: "high" | "medium" | "low";
+    photo_vibe_reflected: boolean;
+    menu_visuals_reflected: boolean;
+    fake_logo_risk: boolean;
+  };
 }
 
 /**
@@ -414,6 +423,57 @@ export interface VisualCuesJson {
   casual_or_refined: string;
   vibe_cues: string[];
   notes: string;
+}
+
+/** Confidence that an extracted logo really belongs to the business. */
+export type LogoConfidence = "high" | "medium" | "low" | "none";
+
+export type LogoSourceType =
+  | "storefront_photo"
+  | "signage"
+  | "menu_photo"
+  | "packaging"
+  | "interior_sign"
+  | "profile_image"
+  | "uploaded"
+  | "unknown";
+
+/** Processed logo asset embedded as a data URL (never a hotlink). */
+export interface BrandLogoAsset {
+  /** PNG data URL, max ~512px wide */
+  dataUrl: string;
+  /** Background successfully removed (flat-background logos only) */
+  transparent: boolean;
+  /** Legible on dark surfaces */
+  darkSafe: boolean;
+  /** Legible on light surfaces */
+  lightSafe: boolean;
+}
+
+/**
+ * Result of the logo / brand-identity extraction over the business's public
+ * photos (official Places Photo API + AI vision + verification). A real logo
+ * is only used at high/medium confidence; below that the site falls back to
+ * a text wordmark — never an invented mark.
+ */
+export interface BrandIdentityJson {
+  logo_found: boolean;
+  logo_confidence: LogoConfidence;
+  logo_source_type: LogoSourceType;
+  /** Places photo resource name or "uploaded" — never a scraped URL */
+  logo_source_ref: string;
+  logo_source_notes: string;
+  detected_text: string;
+  matched_business_name: boolean;
+  candidate_images_checked: number;
+  /** Present only at high/medium confidence (or manual upload) */
+  logo: BrandLogoAsset | null;
+  brand_colors: string[];
+  accent_colors: string[];
+  background_recommendation: string;
+  usage_recommendation: string;
+  warnings: string[];
+  extracted_at: string;
 }
 
 /** Restaurant/hospitality-specific creative direction layer. */

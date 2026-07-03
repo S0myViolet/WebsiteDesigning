@@ -7,6 +7,8 @@
 // fallback offline). Every interpolated string is escaped.
 
 import type {
+  BrandIdentityJson,
+  BrandLogoAsset,
   DesignBriefJson,
   DesignSystemJson,
   FeatureSection,
@@ -42,7 +44,32 @@ export interface RenderContext {
   system?: DesignSystemJson | null;
   layout: LayoutType;
   heroVariant?: HeroVariant;
+  /** Extracted logo / brand identity (logo used at high/medium confidence) */
+  brand?: BrandIdentityJson | null;
 }
+
+/** The real logo asset, only when confident it belongs to the business. */
+export function usableLogoAsset(
+  brand?: BrandIdentityJson | null
+): BrandLogoAsset | null {
+  if (!brand?.logo || !brand.logo_found) return null;
+  return brand.logo_confidence === "high" || brand.logo_confidence === "medium"
+    ? brand.logo
+    : null;
+}
+
+/** Logo + name lockup. Opaque crops sit in a small white plaque. */
+function brandMark(
+  name: string,
+  logo: BrandLogoAsset,
+  opts?: { onDark?: boolean; nameClass?: string }
+): string {
+  const plaque = !logo.transparent || (opts?.onDark && !logo.darkSafe);
+  return `<span class="brand-mark"><img class="brand-logo${plaque ? " plaque" : ""}" src="${logo.dataUrl}" alt="${escapeHtml(name)} logo" /><span class="${opts?.nameClass ?? "brand-mark-name"}">${escapeHtml(name)}</span></span>`;
+}
+
+/** Layouts whose renderers already ship a real top nav (logo goes there). */
+const NAV_LAYOUTS: LayoutType[] = ["premium-service", "premium-professional"];
 
 const NOTE_SHORT = "Concept draft";
 const NOTE_LONG =
@@ -551,13 +578,21 @@ function renderFeatureSections(
 // Premium multi-column footer
 // ---------------------------------------------------------------------------
 
-function siteFooter(business: PreviewBusiness, links: Links, copy: WebsiteCopyJson): string {
+function siteFooter(
+  business: PreviewBusiness,
+  links: Links,
+  copy: WebsiteCopyJson,
+  logo: BrandLogoAsset | null = null
+): string {
   const areaSuffix = business.area ? ` · ${escapeHtml(business.area)}` : "";
   const today = todayLine(business);
+  const footLogo = logo
+    ? `<img class="brand-logo foot-logo${logo.transparent ? "" : " plaque"}" src="${logo.dataUrl}" alt="${escapeHtml(business.name)} logo" />`
+    : "";
   return `<footer class="site-footer">
     <div class="container foot-grid">
       <div>
-        <p class="brand">${escapeHtml(business.name)}</p>
+        ${footLogo}<p class="brand">${escapeHtml(business.name)}</p>
         <p class="muted">${escapeHtml(business.category)}${areaSuffix}</p>
         ${copy.seo_meta_description ? `<p class="foot-desc">${escapeHtml(copy.seo_meta_description)}</p>` : ""}
       </div>
@@ -599,6 +634,18 @@ function baseCss(t: Tokens): string {
   .micro { font-size:12.5px; color:${t.muted}; margin-top:10px; letter-spacing:.01em; }
   .kicker { font-size:11.5px; font-weight:700; letter-spacing:.22em; text-transform:uppercase; color:var(--primary); margin-bottom:12px; display:flex; align-items:center; gap:12px; font-family:${t.bodyFont}; }
   .kicker::after { content:""; height:1px; width:44px; background:${withAlpha(t.primary, "59")}; }
+
+  /* Real extracted brand logo (high/medium confidence only). Opaque crops
+     sit in a small white plaque so any photo background reads as intentional. */
+  .brand-mark { display:inline-flex; align-items:center; gap:12px; min-width:0; }
+  .brand-logo { height:40px; width:auto; max-width:190px; object-fit:contain; display:block; }
+  .brand-logo.plaque { background:#fff; padding:5px 9px; border-radius:9px; box-shadow:0 1px 5px rgba(0,0,0,.10); }
+  .brand-mark-name, .nav-brand-name { font-family:${t.headingFont}; font-weight:700; font-size:17px; color:inherit; }
+  .brand-bar { background:var(--bg); border-bottom:1px solid ${t.border}; }
+  .brand-bar .inner { max-width:1140px; margin:0 auto; padding:12px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  .brand-bar-cta { font-size:14px; font-weight:650; color:var(--primary); text-decoration:none; white-space:nowrap; }
+  .brand-bar-cta:hover { text-decoration:underline; }
+  .foot-logo { height:34px; margin-bottom:10px; }
 
   /* Concept-draft notice: compliant but composed — a professional proof tag,
      not a warning banner. Static ribbon on top + repeated in the footer. */
@@ -764,6 +811,7 @@ document.documentElement.classList.add("js");
 // ---------------------------------------------------------------------------
 
 function renderPremiumService(ctx: RenderContext, t: Tokens, links: Links): { css: string; body: string } {
+  const navLogo = usableLogoAsset(ctx.brand);
   const { business, copy, brief } = ctx;
   const hv = ctx.heroVariant ?? "a";
   const monogram = escapeHtml(business.name.trim().charAt(0).toUpperCase() || "•");
@@ -853,7 +901,7 @@ function renderPremiumService(ctx: RenderContext, t: Tokens, links: Links): { cs
   const body = `
   <nav class="top-nav" aria-label="Main">
     <div class="inner">
-      <a class="name" href="#top">${escapeHtml(business.name)}</a>
+      <a class="name" href="#top">${navLogo ? brandMark(business.name, navLogo, { nameClass: "nav-brand-name" }) : escapeHtml(business.name)}</a>
       <div class="nav-links">
         <a href="#signature">Services</a><a href="#about">About</a><a href="#visit">Visit</a>
       </div>
@@ -1370,6 +1418,7 @@ function renderCreativePortfolio(ctx: RenderContext, t: Tokens, links: Links): {
 // ---------------------------------------------------------------------------
 
 function renderPremiumProfessional(ctx: RenderContext, t: Tokens, links: Links): { css: string; body: string } {
+  const navLogo = usableLogoAsset(ctx.brand);
   const { business, copy, brief } = ctx;
   const hv = ctx.heroVariant ?? "a";
   const areas = mergedHighlights(copy, 3, 5);
@@ -1464,7 +1513,7 @@ function renderPremiumProfessional(ctx: RenderContext, t: Tokens, links: Links):
   const body = `
   <nav class="pro-nav" aria-label="Main">
     <div class="inner">
-      <a class="name" href="#top">${escapeHtml(business.name)}</a>
+      <a class="name" href="#top">${navLogo ? brandMark(business.name, navLogo, { onDark: true, nameClass: "nav-brand-name" }) : escapeHtml(business.name)}</a>
       ${links.tel || links.wa ? `<a class="btn" href="${escapeHtml(links.wa ?? links.tel ?? "#contact")}">${escapeHtml(copy.cta_text || "Request a consultation")}</a>` : ""}
     </div>
   </nav>
@@ -1609,6 +1658,18 @@ export function renderWebsite(ctx: RenderContext): string {
   const links = deriveLinks(ctx.business, ctx.copy);
   const { css, body } = RENDERERS[ctx.layout](ctx, tokens, links);
 
+  // Real extracted logo: nav layouts render it inside their own top nav; the
+  // others get a slim brand bar above the hero, styled from the page tokens.
+  const logo = usableLogoAsset(ctx.brand);
+  const brandBar =
+    logo && !NAV_LAYOUTS.includes(ctx.layout)
+      ? `<div class="brand-bar"><div class="inner">${brandMark(ctx.business.name, logo)}${
+          links.wa || links.tel
+            ? `<a class="brand-bar-cta" href="${escapeHtml(links.wa ?? links.tel ?? "#contact")}">${escapeHtml(ctx.copy.cta_text || "Contact us")}</a>`
+            : ""
+        }</div></div>`
+      : "";
+
   // Fonts load with display:swap and degrade to curated system stacks, so the
   // page renders fine offline and gains its real typographic voice online.
   const fontLinks = `<link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -1629,8 +1690,9 @@ ${css}</style>
 </head>
 <body>
 ${draftNote()}
+${brandBar}
 ${body}
-${siteFooter(ctx.business, links, ctx.copy)}
+${siteFooter(ctx.business, links, ctx.copy, logo)}
 ${stickyMobileCta(links, ctx.copy)}
 ${tokens.motion ? REVEAL_SCRIPT : ""}
 </body>

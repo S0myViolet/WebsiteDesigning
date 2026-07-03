@@ -20,6 +20,7 @@ import { LEAD_STATUS_VALUES } from "@/lib/constants";
 import {
   parseJsonField,
   type AnalysisJson,
+  type BrandIdentityJson,
   type BusinessListItem,
   type CreativeDirectionJson,
   type DesignSystemJson,
@@ -216,6 +217,10 @@ export function toBusinessDetail(b: BusinessWithAllRelations): BusinessDetail {
     website: b.website ? toWebsiteDto(b.website) : null,
     lead: b.leadStatus ? toLeadStatusDto(b.leadStatus) : null,
     research: parseJsonField<ResearchResult | null>(b.researchJson, null),
+    brandIdentity: parseJsonField<BrandIdentityJson | null>(
+      b.brandIdentityJson,
+      null
+    ),
   };
 }
 

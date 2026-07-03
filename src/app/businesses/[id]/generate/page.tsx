@@ -34,6 +34,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Badge } from "@/components/ui/badge";
 import { QualityScoreBadge } from "@/components/generate/quality-badge";
 import {
+  BrandIdentityCard,
   CreativeDirectionCard,
   DesignBriefCard,
   DesignSystemCard,
@@ -722,6 +723,15 @@ export default function GenerateWebsitePage() {
           <DesignBriefCard brief={website.designBrief} />
           <VisualStyleCard style={website.visualStyle} />
           <DesignSystemCard system={website.designSystem} />
+          <BrandIdentityCard
+            brand={business.brandIdentity}
+            businessId={id}
+            onChanged={(b) =>
+              setBusiness((prev) =>
+                prev ? { ...prev, brandIdentity: b } : prev
+              )
+            }
+          />
           <SourcesCard
             research={business.research}
             brief={website.designBrief}

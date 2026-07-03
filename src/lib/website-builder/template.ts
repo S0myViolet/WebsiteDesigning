@@ -24,6 +24,8 @@ import type {
 } from "@/lib/types";
 import { LAYOUT_TYPE_LABELS } from "@/lib/types";
 import type { PreviewInput } from "./preview-html";
+import { usableLogoAsset } from "./layouts";
+import { ZIP_BASE64_PREFIX } from "./zip";
 import { selectLayout } from "./layout-select";
 import { resolveFontPairing, type FontPairing } from "./fonts";
 import { normalizePhone, whatsappLink } from "@/lib/utils";
@@ -259,6 +261,8 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
   // disclaimer, enables indexing, and points the canonical URL at the domain.
   const siteUrl = input.production ? canonicalOrigin(input.production.domain) : null;
   const production = Boolean(input.production && siteUrl);
+  // Real extracted logo (high/medium confidence): shipped as public/logo.png.
+  const logoAsset = usableLogoAsset(input.brand ?? null);
 
   const layout: LayoutType =
     input.layout ??
@@ -336,6 +340,13 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
       mapsUrl: safeHttpUrl(business.googleMapsUrl),
       mapEmbedUrl: `https://www.google.com/maps?q=${mapQuery}&output=embed`,
     },
+    brand: {
+      hasLogo: Boolean(logoAsset),
+      logoTransparent: logoAsset?.transparent ?? false,
+      sourceNote: logoAsset
+        ? `Logo extracted from the business's public ${input.brand?.logo_source_type?.replace(/_/g, " ") ?? "photos"} (confidence: ${input.brand?.logo_confidence ?? "medium"}).`
+        : "",
+    },
     // Empty strings in production mode: DraftBanner is omitted from the
     // project and SiteFooter hides the disclaimer bar when it's blank.
     draftNotice: production
@@ -353,8 +364,8 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
     "postcss.config.js": POSTCSS_CONFIG,
     "tailwind.config.ts": buildTailwindConfig(tokens),
     "README.md": production
-      ? buildProductionReadme(business.name, layout, tokens, input.style ?? null)
-      : buildReadme(business.name, layout, tokens, input.style ?? null),
+      ? buildProductionReadme(business.name, layout, tokens, input.style ?? null, site.brand.sourceNote)
+      : buildReadme(business.name, layout, tokens, input.style ?? null, site.brand.sourceNote),
     "src/app/globals.css": buildGlobalsCss(tokens),
     "src/app/layout.tsx": buildLayoutTsx(tokens.font, siteUrl),
     "src/app/page.tsx": buildPageTsx(layoutModule, production),
@@ -367,6 +378,10 @@ export function buildNextJsProject(input: PreviewInput): Record<string, string> 
     files["DEPLOY.md"] = buildDeployGuide(business.name, siteUrl);
   } else {
     files["src/components/DraftBanner.tsx"] = DRAFT_BANNER_TSX;
+  }
+  if (logoAsset) {
+    const base64 = logoAsset.dataUrl.split(",")[1] ?? "";
+    if (base64) files["public/logo.png"] = `${ZIP_BASE64_PREFIX}${base64}`;
   }
   return files;
 }
@@ -522,6 +537,8 @@ interface SiteConfigData {
     mapsUrl: string | null;
     mapEmbedUrl: string;
   };
+  /** Real extracted logo shipped as public/logo.png (null = text wordmark) */
+  brand: { hasLogo: boolean; logoTransparent: boolean; sourceNote: string };
   /** Slim top-ribbon notice: short label + one-line note. */
   draftNotice: { short: string; long: string };
   disclaimer: string;
@@ -624,6 +641,8 @@ export interface SiteConfig {
     mapsUrl: string | null;
     mapEmbedUrl: string;
   };
+  /** Real extracted logo shipped as /logo.png (hasLogo false = text wordmark) */
+  brand: { hasLogo: boolean; logoTransparent: boolean; sourceNote: string };
   /** Slim top-ribbon concept notice (empty strings in the production export). */
   draftNotice: { short: string; long: string };
   /** Disclaimer sentence in the footer bar (empty = hidden, production export). */
@@ -638,7 +657,8 @@ function buildReadme(
   businessName: string,
   layout: LayoutType,
   tokens: StyleTokens,
-  style: VisualStyleJson | null
+  style: VisualStyleJson | null,
+  brandNote = ""
 ): string {
   const safeName = safeReadmeText(businessName);
   const layoutLabel = LAYOUT_TYPE_LABELS[layout];
@@ -709,7 +729,7 @@ shots. Put images in \`public/\` and swap the gradient \`<div>\`s for
   not displayed.
 - A slim concept-draft ribbon is rendered at the top of every page and the
   full disclaimer appears in the footer bar; remove \`DraftBanner\` and the
-  footer disclaimer only after the business owner approves the site.
+  footer disclaimer only after the business owner approves the site.${brandNote ? `\n- \`public/logo.png\`: ${brandNote} Confirm the owner is happy with it (or replace it with the official artwork they provide).` : ""}
 `;
 }
 
@@ -721,7 +741,8 @@ function buildProductionReadme(
   businessName: string,
   layout: LayoutType,
   tokens: StyleTokens,
-  style: VisualStyleJson | null
+  style: VisualStyleJson | null,
+  brandNote = ""
 ): string {
   const safeName = safeReadmeText(businessName);
   const layoutLabel = LAYOUT_TYPE_LABELS[layout];
@@ -776,7 +797,7 @@ data-driven from that file, so most changes only require editing \`SITE\`.
   wire it to a form service or remove it.
 - Re-confirm phone number, address, and opening hours with the owner.
 - Testimonials are paraphrased from public reviews; confirm the owner is
-  happy with each one (or replace them with quotes the owner provides).
+  happy with each one (or replace them with quotes the owner provides).${brandNote ? `\n- \`public/logo.png\`: ${brandNote} Replace with the official artwork if the owner provides better files.` : ""}
 `;
 }
 
@@ -927,6 +948,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: SITE.copy.seoTitle,
   description: SITE.copy.seoMetaDescription,
+  ...(SITE.brand.hasLogo ? { icons: { icon: "/logo.png" } } : {}),
 ${metadataExtras}
 };
 
@@ -994,6 +1016,19 @@ export function SiteFooter() {
     <footer className="border-t border-text/10 bg-surface">
       <div className="mx-auto grid max-w-6xl gap-9 px-5 py-12 md:grid-cols-3">
         <div>
+          {SITE.brand.hasLogo ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src="/logo.png"
+              alt={business.name + " logo"}
+              className={
+                "mb-3 h-9 w-auto max-w-[180px] object-contain" +
+                (SITE.brand.logoTransparent
+                  ? ""
+                  : " rounded-lg bg-white p-1.5 shadow-sm")
+              }
+            />
+          ) : null}
           <p className="font-heading text-lg font-bold">{business.name}</p>
           <p className="mt-1 text-sm text-text/60">
             {business.category}

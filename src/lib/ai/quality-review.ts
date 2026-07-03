@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import type {
+  BrandIdentityJson,
   CreativeDirectionJson,
   DesignBriefJson,
   LayoutType,
@@ -64,6 +65,9 @@ const reviewSchema = z.object({
   unsupported_claims_found: z.array(z.string()).catch([]),
   design_notes: z.array(z.string()).catch([]),
   priority_fixes: z.array(z.string()).catch([]),
+  brand_palette_matches_sources: z.boolean().catch(true),
+  photo_vibe_reflected: z.boolean().catch(true),
+  menu_visuals_reflected: z.boolean().catch(true),
   issues: z
     .array(
       z.object({
@@ -97,6 +101,8 @@ Rate across TEN dimensions and weigh them equally: originality, premium feel, bu
 
 Scoring guide: 94+ = agency-grade, would impress a real owner as-is; 90-93 = client-ready; 80-89 = a real defect remains; 60-79 = templated; below 60 = filler or unsupported claims. Be harsh about real defects, but score CONSISTENTLY with your own findings: if all four core checks pass (specific, tone, strong hero, business-specific features), there are no unsupported claims, no generic marketing phrases, and every remaining issue is medium/low polish, the score MUST be 90 or higher. Reserve 80-89 for drafts with at least one high-severity issue or a failed core check. Do not park a defect-free draft at 88 out of general strictness — name the high-severity defect or score it 90+.
 
+When REAL brand identity / visual cues are provided in the user message, also judge: "brand_palette_matches_sources" (does the site palette visibly connect to the business's actual brand/venue colors?), "photo_vibe_reflected" (does the design mood match the venue photos?), "menu_visuals_reflected" (for food businesses: does the presentation reflect the menu/dish cues?). Return true for these when no brand/photo context was provided.
+
 design_notes: 2-4 short observations about what makes (or would make) this feel custom-designed rather than generated.
 priority_fixes: the 2-4 highest-impact changes, ordered, each one concrete and actionable ("Replace the headline with ...", "Add a what-regulars-order section using ..."). Empty array only when the score is 92+.
 improvement_instructions: a numbered list of concrete rewrite instructions fixing every issue found (empty string only when the score is 92+).
@@ -112,6 +118,9 @@ Respond with VALID JSON ONLY:
   "unsupported_claims_found": string[],
   "design_notes": string[],
   "priority_fixes": string[],
+  "brand_palette_matches_sources": boolean,
+  "photo_vibe_reflected": boolean,
+  "menu_visuals_reflected": boolean,
   "issues": [{ "area": string, "severity": "high"|"medium"|"low", "note": string }],
   "improvement_instructions": string
 }`;
@@ -125,6 +134,7 @@ function buildUserPrompt(
   extras?: {
     style?: VisualStyleJson | null;
     direction?: CreativeDirectionJson | null;
+    brand?: BrandIdentityJson | null;
   }
 ): string {
   const reviewLines = input.reviews
@@ -132,8 +142,12 @@ function buildUserPrompt(
     .map((r) => `- (${r.rating ?? "?"} stars) ${r.text.slice(0, 250)}`)
     .join("\n");
   const cues = extras?.direction?.visual_cues;
+  const brand = extras?.brand;
+  const brandLine = brand && (brand.logo_found || brand.brand_colors.length > 0)
+    ? `- REAL brand identity available (${brand.logo_found ? `logo ${brand.logo_confidence} confidence from ${brand.logo_source_type}` : "colors only"}): brand colors ${brand.brand_colors.join(", ") || "n/a"}, accents ${brand.accent_colors.join(", ") || "n/a"}. The palette must visibly connect to these — judge by HUE FAMILY and overall feel, not exact hex equality: palette colors are legibility-adjusted (darkened/lightened) versions of the brand colors, which is correct. Flag brand_palette_matches_sources=false only when the palette is in a genuinely different color family than the brand. The logo (when found at high/medium confidence) is rendered in the site header and footer automatically.\n`
+    : "";
   const designBlock = extras?.style
-    ? `\nDESIGN TO JUDGE FOR FIT:\n- Concept: ${extras.direction?.creative_concept ?? "(none)"}\n- Palette: primary ${extras.style.color_palette.primary}, secondary ${extras.style.color_palette.secondary}, accent ${extras.style.color_palette.accent}, background ${extras.style.color_palette.background}\n${cues ? `- The venue's REAL visual cues (from its public photos): dominant ${cues.dominant_colors.join(", ") || "n/a"}; accents ${cues.accent_colors.join(", ") || "n/a"}; ${cues.lighting_mood}; ${cues.material_feel}; ${cues.casual_or_refined}. Judge whether the palette and mood match the real venue — mismatch is a high-severity issue.\n` : ""}`
+    ? `\nDESIGN TO JUDGE FOR FIT:\n- Concept: ${extras.direction?.creative_concept ?? "(none)"}\n- Palette: primary ${extras.style.color_palette.primary}, secondary ${extras.style.color_palette.secondary}, accent ${extras.style.color_palette.accent}, background ${extras.style.color_palette.background}\n${brandLine}${cues ? `- The venue's REAL visual cues (from its public photos): dominant ${cues.dominant_colors.join(", ") || "n/a"}; accents ${cues.accent_colors.join(", ") || "n/a"}; ${cues.lighting_mood}; ${cues.material_feel}; ${cues.casual_or_refined}. Judge whether the palette and mood match the real venue — mismatch is a high-severity issue.\n` : ""}`
     : "";
   return `BUSINESS: ${input.name} — ${input.category} in ${input.area ?? "Dubai"}. Layout variant: ${layout}.
 Full address (ground truth for location wording — any neighbourhood named in it is correct to mention): ${input.address ?? "(unknown)"}
@@ -243,6 +257,7 @@ export async function reviewWebsiteQuality(
   extras?: {
     style?: VisualStyleJson | null;
     direction?: CreativeDirectionJson | null;
+    brand?: BrandIdentityJson | null;
   }
 ): Promise<QualityReportJson> {
   const raw = await chatJson<unknown>({
@@ -266,6 +281,9 @@ export async function reviewWebsiteQuality(
         unsupported_claims_found: [],
         design_notes: [],
         priority_fixes: [],
+        brand_palette_matches_sources: true,
+        photo_vibe_reflected: true,
+        menu_visuals_reflected: true,
         issues: [
           {
             area: "review",
@@ -311,6 +329,16 @@ export async function reviewWebsiteQuality(
       note: "unsupported claim phrasing found",
     });
   }
+  const brand = extras?.brand;
+  const brandCuesAvailable = Boolean(
+    brand && (brand.logo_found || brand.brand_colors.length > 0)
+  );
+  if (brandCuesAvailable && ai.brand_palette_matches_sources === false) {
+    caps.push({
+      cap: QUALITY_GATE.minimumPassingScore - 1,
+      note: "the palette ignores the business's real brand colors",
+    });
+  }
   const capIssues: QualityIssue[] = [];
   for (const { cap, note } of caps) {
     if (score > cap) {
@@ -335,7 +363,25 @@ export async function reviewWebsiteQuality(
     .filter(Boolean)
     .join("\n");
 
+  const brandChecks = brandCuesAvailable && brand
+    ? {
+        brand_checks: {
+          // The renderer always places a confirmed logo in header + footer.
+          logo_used_if_available: !brand.logo_found || Boolean(brand.logo),
+          brand_palette_matches_sources: ai.brand_palette_matches_sources,
+          visual_identity_confidence: (brand.logo_confidence === "high" || brand.logo_confidence === "medium"
+            ? brand.logo_confidence
+            : "low") as "high" | "medium" | "low",
+          photo_vibe_reflected: ai.photo_vibe_reflected,
+          menu_visuals_reflected: ai.menu_visuals_reflected,
+          // Logos are only ever extracted from the business's own photos.
+          fake_logo_risk: false,
+        },
+      }
+    : {};
+
   return {
+    ...brandChecks,
     quality_score: score,
     feels_specific: ai.feels_specific,
     tone_matches_category: ai.tone_matches_category,

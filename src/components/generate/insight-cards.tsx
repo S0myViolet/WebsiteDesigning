@@ -1,6 +1,16 @@
+"use client";
+
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  ExternalLink,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,16 +18,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { ChipList } from "@/components/detail/chips";
 import { qualityTier } from "@/components/generate/quality-badge";
 import { cn } from "@/lib/utils";
 import {
   CLAIM_CONFIDENCE_LABELS,
+  type BrandIdentityJson,
   type ClaimConfidence,
   type GenerationStatus,
   type CreativeDirectionJson,
   type DesignBriefJson,
   type DesignSystemJson,
+  type LogoConfidence,
+  type LogoSourceType,
   type QualityReportJson,
   type ResearchResult,
   type UniquenessNotes,
@@ -612,6 +626,290 @@ export function DesignSystemCard({
           </div>
         </>
       )}
+    </InsightCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 3c. Brand identity (real logo + colors extracted from public photos)
+// ---------------------------------------------------------------------------
+
+const LOGO_CONFIDENCE_TONES: Record<LogoConfidence, string> = {
+  high: TONES.emerald,
+  medium: TONES.amber,
+  low: "border-transparent bg-gray-100 text-gray-700 dark:bg-gray-500/20 dark:text-gray-300",
+  none: "border-transparent bg-gray-100 text-gray-700 dark:bg-gray-500/20 dark:text-gray-300",
+};
+
+const LOGO_CONFIDENCE_LABELS: Record<LogoConfidence, string> = {
+  high: "High confidence",
+  medium: "Medium confidence",
+  low: "Low confidence",
+  none: "No logo",
+};
+
+const LOGO_SOURCE_LABELS: Record<LogoSourceType, string> = {
+  storefront_photo: "Storefront photo",
+  signage: "Signage",
+  menu_photo: "Menu photo",
+  packaging: "Packaging",
+  interior_sign: "Interior sign",
+  profile_image: "Profile image",
+  uploaded: "Manual upload",
+  unknown: "Unknown",
+};
+
+const MAX_LOGO_UPLOAD_BYTES = 1.5 * 1024 * 1024;
+
+/** Small swatch row for extracted brand/accent colors. */
+function SwatchRow({ label, colors }: { label: string; colors: string[] }) {
+  if (colors.length === 0) return null;
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {colors.map((hex, i) => (
+          <span
+            key={`${hex}-${i}`}
+            className="h-6 w-6 shrink-0 rounded-md border border-border"
+            style={{ backgroundColor: hex }}
+            title={hex}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function BrandIdentityCard({
+  brand,
+  businessId,
+  onChanged,
+}: {
+  brand: BrandIdentityJson | null;
+  businessId: string;
+  onChanged?: (b: BrandIdentityJson) => void;
+}) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = React.useState<"upload" | "remove" | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [saved, setSaved] = React.useState(false);
+
+  const finishSuccess = React.useCallback(
+    (next: BrandIdentityJson) => {
+      onChanged?.(next);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
+    },
+    [onChanged]
+  );
+
+  const handleFile = React.useCallback(
+    async (file: File) => {
+      setError(null);
+      setSaved(false);
+      if (file.size > MAX_LOGO_UPLOAD_BYTES) {
+        setError("That file is larger than 1.5 MB — export a smaller PNG, JPEG or WEBP.");
+        return;
+      }
+      setBusy("upload");
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("Could not read the file."));
+          reader.readAsDataURL(file);
+        });
+        const res = await fetch(`/api/businesses/${businessId}/brand-logo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dataUrl }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          setError(data?.error || `Upload failed (${res.status}).`);
+          return;
+        }
+        const data = (await res.json()) as { brandIdentity: BrandIdentityJson };
+        finishSuccess(data.brandIdentity);
+      } catch {
+        setError("Could not upload the logo — check the connection and try again.");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [businessId, finishSuccess]
+  );
+
+  const handleRemove = React.useCallback(async () => {
+    setError(null);
+    setSaved(false);
+    setBusy("remove");
+    try {
+      const res = await fetch(`/api/businesses/${businessId}/brand-logo`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(data?.error || `Remove failed (${res.status}).`);
+        return;
+      }
+      const data = (await res.json()) as { brandIdentity: BrandIdentityJson };
+      finishSuccess(data.brandIdentity);
+    } catch {
+      setError("Could not remove the logo — check the connection and try again.");
+    } finally {
+      setBusy(null);
+    }
+  }, [businessId, finishSuccess]);
+
+  return (
+    <InsightCard
+      title="Brand identity"
+      description="Real logo and brand colors found in the business's public photos"
+    >
+      {!brand ? (
+        <p className="text-muted-foreground">
+          Not scanned yet — runs automatically with the next full generation.
+        </p>
+      ) : brand.logo ? (
+        <>
+          <div className="flex gap-3">
+            <span className="flex h-16 min-w-0 flex-1 items-center justify-center rounded-md border border-border bg-white p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={brand.logo.dataUrl}
+                alt="Extracted logo on a light background"
+                className="max-h-full max-w-full object-contain"
+              />
+            </span>
+            <span className="flex h-16 min-w-0 flex-1 items-center justify-center rounded-md border border-border bg-zinc-900 p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={brand.logo.dataUrl}
+                alt="Extracted logo on a dark background"
+                className="max-h-full max-w-full object-contain"
+              />
+            </span>
+          </div>
+
+          <div>
+            <Badge
+              variant="outline"
+              className={cn(
+                "font-normal",
+                LOGO_CONFIDENCE_TONES[brand.logo_confidence]
+              )}
+            >
+              {LOGO_CONFIDENCE_LABELS[brand.logo_confidence]}
+            </Badge>
+          </div>
+
+          <div className="divide-y divide-border">
+            <MutedRow
+              label="Source"
+              value={LOGO_SOURCE_LABELS[brand.logo_source_type]}
+            />
+            <MutedRow
+              label="Detected text"
+              value={brand.detected_text || "Pictorial mark"}
+            />
+            <MutedRow
+              label="Matches business name"
+              value={brand.matched_business_name ? "Yes" : "No"}
+            />
+            <MutedRow
+              label="Photos checked"
+              value={String(brand.candidate_images_checked)}
+            />
+          </div>
+
+          {brand.logo_confidence === "medium" && (
+            <p className="text-amber-700 dark:text-amber-400">
+              Used in the draft — verify with the owner before production.
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <p>No reliable logo found — the site uses a text wordmark.</p>
+          {brand.warnings.length > 0 && (
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+              {brand.warnings.map((warning, i) => (
+                <li key={`${warning}-${i}`}>{warning}</li>
+              ))}
+            </ul>
+          )}
+          {brand.usage_recommendation && (
+            <p className="text-muted-foreground">
+              {brand.usage_recommendation}
+            </p>
+          )}
+        </>
+      )}
+
+      {brand && (
+        <>
+          <SwatchRow label="Brand colors" colors={brand.brand_colors} />
+          <SwatchRow label="Accent colors" colors={brand.accent_colors} />
+        </>
+      )}
+
+      <div className="space-y-2 border-t border-border pt-3">
+        <FieldLabel>Override</FieldLabel>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void handleFile(file);
+            }}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy !== null}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {busy === "upload" ? <Spinner size="sm" /> : <Upload />}
+            {busy === "upload" ? "Uploading…" : "Upload logo"}
+          </Button>
+          {brand?.logo && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy !== null}
+              onClick={() => void handleRemove()}
+            >
+              {busy === "remove" ? <Spinner size="sm" /> : <Trash2 />}
+              {busy === "remove" ? "Removing…" : "Remove logo"}
+            </Button>
+          )}
+          {saved && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              Saved
+            </span>
+          )}
+        </div>
+        {error && (
+          <p className="flex items-start gap-1.5 text-xs text-destructive">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {error}
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Changes apply on the next regeneration.
+        </p>
+      </div>
     </InsightCard>
   );
 }

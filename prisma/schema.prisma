@@ -42,6 +42,9 @@ model Business {
   rawPlaceData     String?
   // JSON-encoded ResearchResult from compliant public-source research
   researchJson     String?
+  // JSON-encoded BrandIdentityJson: logo extraction result (confidence, cropped
+  // asset as data URL, brand colors) from the business's public photos
+  brandIdentityJson String?
   lat              Float?
   lng              Float?
   isLikelyChain    Boolean  @default(false)

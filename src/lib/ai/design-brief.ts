@@ -13,6 +13,7 @@ import type {
   VisualCuesJson,
   VisualStyleJson,
 } from "@/lib/types";
+import type { BrandIdentityJson } from "@/lib/types";
 import { LAYOUT_TYPES } from "@/lib/types";
 import { chatJson } from "@/lib/ai/openai-client";
 import { COPY_RULES, sanitizeCopy } from "@/lib/ai/copy-rules";
@@ -437,6 +438,8 @@ export async function generateDesignBrief(
     visualCues?: VisualCuesJson | null;
     /** Restaurants/cafes: also produce the hospitality direction layer */
     hospitality?: boolean;
+    /** Extracted logo / brand identity — brand colors anchor the palette */
+    brand?: BrandIdentityJson | null;
   }
 ): Promise<{
   direction: CreativeDirectionJson;
@@ -458,6 +461,17 @@ PUBLIC VISUAL CUES extracted from this business's real photos (the site must loo
 - Designer note: ${cues.notes || ""}
 Derive visual_style.color_palette primarily from the dominant/accent colors above (adjust tastefully for legibility; keep the background light unless the venue is clearly an evening/dark concept). No random palettes.`
     : "";
+  const brand = opts.brand;
+  const brandBlock =
+    brand && (brand.brand_colors.length > 0 || brand.logo_found)
+      ? `
+
+REAL BRAND IDENTITY extracted from the business's own signage/menu/photos (${brand.logo_found ? `logo found, ${brand.logo_confidence} confidence, from ${brand.logo_source_type}` : "brand colors only"}):
+- Brand colors: ${brand.brand_colors.join(", ") || "(none)"} · Accents: ${brand.accent_colors.join(", ") || "(none)"}
+- Detected mark text: ${brand.detected_text || "(pictorial)"}
+- Background recommendation: ${brand.background_recommendation || "n/a"}
+These are the business's ACTUAL brand colors — visual_style.color_palette must be built around them (primary/accent anchored to the brand colors, adjusted only for legibility). The design system should feel built around this brand mark, not merely decorated with it.`
+      : "";
   const hospitalityBlock = opts.hospitality
     ? `
 
@@ -483,6 +497,7 @@ Every field grounded in the reviews/photos — a reviewer should recognize the p
   const user =
     buildUserPrompt(input, analysis, research) +
     cuesBlock +
+    brandBlock +
     hospitalityBlock +
     (opts.critique
       ? `

@@ -34,6 +34,7 @@ import {
   extractVisualCues,
   fetchPlacePhotoDataUrls,
 } from "@/lib/ai/visual-cues";
+import { extractBrandIdentity } from "@/lib/ai/logo-detection";
 import { isHospitalityCategory } from "@/lib/constants";
 import {
   clearGenerationProgress,
@@ -52,6 +53,7 @@ import {
   LAYOUT_TYPES,
   parseJsonField,
   type AnalysisJson,
+  type BrandIdentityJson,
   type CreativeDirectionJson,
   type DesignSystemJson,
   type DesignBriefJson,
@@ -234,19 +236,24 @@ export async function POST(
       null
     );
     let visualCues: VisualCuesJson | null = null;
+    let brand = parseJsonField<BrandIdentityJson | null>(
+      business.brandIdentityJson,
+      null
+    );
     const photoMetas = parseJsonField<PhotoMeta[]>(business.photosJson, []);
     if (mode !== "copy" && photoMetas.length > 0 && settings.googleMapsApiKey) {
       setGenerationProgress(business.id, {
         stage: "Reviewing public photos and menu cues…",
       });
+      let photoDataUrls: string[] = [];
       try {
-        const photoDataUrls = await fetchPlacePhotoDataUrls(
+        photoDataUrls = await fetchPlacePhotoDataUrls(
           photoMetas,
           settings.googleMapsApiKey,
-          3
+          6
         );
         visualCues = await extractVisualCues({
-          photoDataUrls,
+          photoDataUrls: photoDataUrls.slice(0, 3),
           businessName: business.name,
           category: business.category,
           reviewSnippets: input.reviews.map((r) => r.text),
@@ -255,6 +262,40 @@ export async function POST(
         });
       } catch {
         visualCues = null; // photos unavailable — infer from category/reviews
+      }
+      // Logo / brand identity: a confirmed logo sticks once found (vision
+      // extraction is nondeterministic — never trade a verified logo for a
+      // reroll). Re-extract only when nothing usable is stored; manual
+      // uploads are never overwritten automatically.
+      const hasUsableLogo =
+        brand?.logo_found &&
+        (brand.logo_confidence === "high" || brand.logo_confidence === "medium");
+      const shouldExtractLogo =
+        photoDataUrls.length > 0 &&
+        (!brand ||
+          (mode === "full" &&
+            !hasUsableLogo &&
+            brand.logo_source_type !== "uploaded"));
+      if (shouldExtractLogo) {
+        setGenerationProgress(business.id, {
+          stage: "Searching photos for the business logo…",
+        });
+        try {
+          brand = await extractBrandIdentity({
+            photoDataUrls,
+            photoRefs: photoMetas.map((m) => m.name),
+            businessName: business.name,
+            category: business.category,
+            apiKey: settings.openaiApiKey,
+            model: settings.aiModel,
+          });
+          await prisma.business.update({
+            where: { id: business.id },
+            data: { brandIdentityJson: JSON.stringify(brand) },
+          });
+        } catch {
+          // Logo extraction is best-effort — the wordmark fallback always works.
+        }
       }
     }
     if (!visualCues) visualCues = direction?.visual_cues ?? null;
@@ -279,6 +320,7 @@ export async function POST(
         ...ai,
         visualCues,
         hospitality,
+        brand,
       });
       direction = generated.direction;
       designSystem = generated.system;
@@ -430,6 +472,7 @@ export async function POST(
           critique: fullCritique,
           visualCues,
           hospitality,
+          brand,
         });
         direction = regenerated.direction;
         designSystem = regenerated.system;
@@ -474,6 +517,7 @@ export async function POST(
       report = await reviewWebsiteQuality(input, copy, brief, layout, ai, {
         style,
         direction,
+        brand,
       });
 
       if (!best || report.quality_score > best.score) {
@@ -568,6 +612,7 @@ export async function POST(
       system: designSystem,
       layout,
       heroVariant,
+      brand,
     });
     const projectFiles = buildNextJsProject({
       business: businessBlock,
@@ -576,6 +621,7 @@ export async function POST(
       style,
       system: designSystem,
       layout,
+      brand,
     });
 
     // ---- Step 10: save everything ------------------------------------------

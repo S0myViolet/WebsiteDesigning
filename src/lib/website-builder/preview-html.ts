@@ -5,6 +5,7 @@
 // flows) by selecting a sensible layout from the business category.
 
 import type {
+  BrandIdentityJson,
   DesignBriefJson,
   DesignSystemJson,
   LayoutType,
@@ -34,6 +35,8 @@ export interface PreviewInput {
    * README for a Cloudflare Pages deploy guide.
    */
   production?: { domain: string } | null;
+  /** Extracted logo / brand identity (logo used at high/medium confidence) */
+  brand?: BrandIdentityJson | null;
 }
 
 export function buildPreviewHtml(input: PreviewInput): string {
@@ -55,6 +58,7 @@ export function buildPreviewHtml(input: PreviewInput): string {
     style: input.style ?? null,
     system: input.system ?? null,
     layout,
+    brand: input.brand ?? null,
   };
   return renderWebsite(ctx);
 }
