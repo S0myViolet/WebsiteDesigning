@@ -380,7 +380,17 @@ export interface QualityReportJson {
   hero_has_strong_idea?: boolean;
   has_business_specific_features?: boolean;
   design_notes?: string[];
+  /** Highest-impact fixes, ordered (drives the improvement loop) */
+  priority_fixes?: string[];
 }
+
+/**
+ * Outcome of the blocking quality gate. "passed" = scored at or above the
+ * minimum; "failed_quality_gate" = best attempt stayed below it after the
+ * maximum number of attempts (the saved draft is diagnostic, not a
+ * deliverable).
+ */
+export type GenerationStatus = "passed" | "failed_quality_gate";
 
 /** Result of the uniqueness gate comparing this site to other generated sites. */
 export interface UniquenessNotes {

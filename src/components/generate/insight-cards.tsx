@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import {
   CLAIM_CONFIDENCE_LABELS,
   type ClaimConfidence,
+  type GenerationStatus,
   type CreativeDirectionJson,
   type DesignBriefJson,
   type DesignSystemJson,
@@ -179,9 +180,12 @@ function CheckRow({ pass, label }: { pass: boolean; label: string }) {
 export function QualityReviewCard({
   score,
   report,
+  generationStatus,
 }: {
   score: number | null;
   report: QualityReportJson | null;
+  /** Blocking-gate outcome; omitted/null hides the verdict line (legacy drafts). */
+  generationStatus?: GenerationStatus | null;
 }) {
   return (
     <InsightCard
@@ -195,6 +199,18 @@ export function QualityReviewCard({
         </p>
       ) : (
         <>
+          {generationStatus === "passed" && (
+            <p className="flex items-center gap-2 font-medium text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              Passed the quality gate
+            </p>
+          )}
+          {generationStatus === "failed_quality_gate" && (
+            <p className="flex items-center gap-2 font-medium text-red-700 dark:text-red-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Failed the quality gate — best attempt kept for diagnosis
+            </p>
+          )}
           {score !== null && (
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-bold tabular-nums leading-none">
@@ -266,6 +282,16 @@ export function QualityReviewCard({
                       </Badge>
                     ))}
                   </div>
+                </Field>
+              )}
+
+              {report.priority_fixes && report.priority_fixes.length > 0 && (
+                <Field label="Priority fixes">
+                  <ol className="list-decimal space-y-1 pl-5">
+                    {report.priority_fixes.map((fix, i) => (
+                      <li key={`${fix}-${i}`}>{fix}</li>
+                    ))}
+                  </ol>
                 </Field>
               )}
 

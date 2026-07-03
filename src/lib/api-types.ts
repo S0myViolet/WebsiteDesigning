@@ -6,6 +6,7 @@ import type {
   CreativeDirectionJson,
   DesignSystemJson,
   DesignBriefJson,
+  GenerationStatus,
   LayoutType,
   LeadStatusValue,
   QualityReportJson,
@@ -70,6 +71,12 @@ export interface WebsiteDto {
   /** Quality-gate score (0-100) and full report */
   qualityScore: number | null;
   qualityReport: QualityReportJson | null;
+  /** Blocking-gate outcome: a draft below the bar is failed, not completed */
+  generationStatus: GenerationStatus | null;
+  /** Attempts used by the last quality-gated generation run */
+  qualityAttempts: number | null;
+  /** Best score reached across those attempts */
+  bestAttemptScore: number | null;
   /** The design concept invented for this business */
   creativeDirection: CreativeDirectionJson | null;
   /** Deeper design system (typography pairing, density, dividers, motion) */

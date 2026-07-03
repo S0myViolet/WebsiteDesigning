@@ -134,6 +134,13 @@ model GeneratedWebsite {
   // Quality-gate result (0-100) and JSON-encoded QualityReportJson
   qualityScore         Int?
   qualityReport        String?
+  // Blocking quality gate: "passed" | "failed_quality_gate" (null = legacy row,
+  // derived from qualityScore), attempts used, best score across attempts,
+  // and when the draft last cleared the gate
+  generationStatus     String?
+  qualityAttempts      Int?
+  bestAttemptScore     Int?
+  passedAt             DateTime?
   // JSON-encoded CreativeDirectionJson (the design concept for this business)
   creativeDirection    String?
   // JSON-encoded DesignSystemJson (typography/spacing/surface system)

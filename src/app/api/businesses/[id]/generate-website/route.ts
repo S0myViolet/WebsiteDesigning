@@ -2,15 +2,23 @@
 //  1. Collect business data          6. Generate layout-aware copy
 //  2. Optional public research       7. (creative direction + design system
 //  3. Ensure review analysis            + visual style come with the brief)
-//  4. Creative direction + brief     8. Design audit (auto-improve below 90,
-//  5. Select the layout variant         hero-weakness rescue) + uniqueness
-//                                    9. Render preview + export, save all
+//  4. Creative direction + brief     8. BLOCKING quality gate (see below)
+//  5. Select the layout variant      9. Render preview + export, save all
+//
+// The quality gate is a hard loop, not advisory: a draft below
+// QUALITY_GATE.minimumPassingScore (90) is a FAILED generation. The audit's
+// issues are fed back into the next attempt (copy rewrite; below
+// hardFailureBelow (85) the whole creative direction is regenerated) until
+// the draft passes or maximumAttempts (5) is reached. If every attempt
+// fails, the BEST attempt is saved with generationStatus
+// "failed_quality_gate" — a diagnostic draft, never presented as completed.
 //
 // Body { mode?: "full" | "copy" | "style", layout?: LayoutType }:
 //  - full  (default): run every step fresh
 //  - copy:  keep the stored direction/system/style/layout, regenerate copy
 //  - style: keep the copy, regenerate direction + system + style + layout
 //  - layout: force a specific layout variant (from the preview page picker)
+// The gate applies to every mode, including rerolls.
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -21,10 +29,11 @@ import { extractReviewKeywords } from "@/lib/keywords";
 import { researchBusiness } from "@/lib/research";
 import { generateDesignBrief } from "@/lib/ai/design-brief";
 import { generateWebsiteCopy } from "@/lib/ai/website-copy";
+import { QUALITY_GATE, reviewWebsiteQuality } from "@/lib/ai/quality-review";
 import {
-  QUALITY_THRESHOLD,
-  reviewWebsiteQuality,
-} from "@/lib/ai/quality-review";
+  clearGenerationProgress,
+  setGenerationProgress,
+} from "@/lib/generation-progress";
 import type { BusinessAnalysisInput } from "@/lib/ai/analysis";
 import { renderWebsite } from "@/lib/website-builder/layouts";
 import {
@@ -59,6 +68,49 @@ const bodySchema = z.object({
   /** Optional explicit layout override (from the preview page's layout picker) */
   layout: z.enum(LAYOUT_TYPES as [LayoutType, ...LayoutType[]]).optional(),
 });
+
+/**
+ * Turn a failed audit into the improvement brief for the next attempt: the
+ * score, every failed check, the generic phrases to ban, the reviewer's
+ * priority fixes and instructions. Fed to the copywriter (every retry) and to
+ * the creative director (hard failures).
+ */
+function buildCritique(report: QualityReportJson): string {
+  const failedChecks = [
+    report.feels_specific === false
+      ? "the copy does not feel specific to this business"
+      : "",
+    report.tone_matches_category === false
+      ? "the tone does not match the business category"
+      : "",
+    report.hero_has_strong_idea === false
+      ? "the hero lacks a strong, business-specific idea"
+      : "",
+    report.has_business_specific_features === false
+      ? "business-specific feature sections are missing or thin"
+      : "",
+  ].filter(Boolean);
+  const highIssues = report.issues
+    .filter((i) => i.severity === "high")
+    .map((i) => `${i.area}: ${i.note}`);
+  const parts = [
+    `The previous draft scored ${report.quality_score}/100 and FAILED the quality gate (minimum ${QUALITY_GATE.minimumPassingScore}). Fix the exact problems below — the revision must be visibly better, not slightly reworded.`,
+    failedChecks.length ? `Failed checks: ${failedChecks.join("; ")}.` : "",
+    report.generic_phrases_found.length
+      ? `These phrases MUST NOT appear in any form: ${report.generic_phrases_found.join(", ")}. Replace them with concrete, review-grounded specifics.`
+      : "",
+    report.priority_fixes?.length
+      ? `Priority fixes, in order:\n${report.priority_fixes.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
+      : "",
+    highIssues.length ? `High-severity issues:\n- ${highIssues.join("\n- ")}` : "",
+    report.improvement_instructions.trim(),
+    report.hero_has_strong_idea === false
+      ? `The HEADLINE is too generic — it must name the single most-praised concrete service, dish, or job from the reviews (not "Professional ... Services" or "Quality ..."). A regular customer should recognize the specialty in the headline.`
+      : "",
+    "Keep every claim grounded in the source data; never invent prices, staff, awards, or certifications.",
+  ];
+  return parts.filter(Boolean).join("\n\n");
+}
 
 /** Rebuild an AnalysisJson from the Analysis row columns (fallback when rawJson is missing). */
 function analysisJsonFromRow(row: Analysis): AnalysisJson {
@@ -207,74 +259,127 @@ export async function POST(
       });
     }
 
-    // ---- Step 6: copy (reused in style mode when present) ------------------
+    // ---- Steps 6+8: BLOCKING quality-gated generation loop ------------------
+    // Generate → audit → feed the audit's issues into the next attempt →
+    // re-audit, until the draft passes or maximumAttempts is reached. The
+    // best-scoring attempt is what gets rendered and saved.
+    const { maximumAttempts, minimumPassingScore, hardFailureBelow } = QUALITY_GATE;
+
     let copy: WebsiteCopyJson | null =
       mode === "style"
         ? parseJsonField<WebsiteCopyJson | null>(stored?.rawJson ?? null, null)
         : null;
-    if (!copy) {
-      copy = await generateWebsiteCopy(input, analysisJson, {
-        ...ai,
-        websiteStyle: settings.defaultWebsiteStyle,
-        brief,
-        direction,
-        layout,
+
+    let report: QualityReportJson | null = null;
+    let best: {
+      score: number;
+      copy: WebsiteCopyJson;
+      report: QualityReportJson;
+      direction: CreativeDirectionJson;
+      designSystem: DesignSystemJson;
+      brief: DesignBriefJson;
+      style: VisualStyleJson;
+      layout: LayoutType;
+    } | null = null;
+    let attemptsUsed = 0;
+    let critique = "";
+
+    for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
+      attemptsUsed = attempt;
+      setGenerationProgress(business.id, {
+        stage:
+          attempt === 1
+            ? "Generating website draft…"
+            : `Improving weak sections — attempt ${attempt} of ${maximumAttempts}…`,
+        attempt,
+        maxAttempts: maximumAttempts,
+        bestScore: best?.score ?? null,
       });
+
+      // A hard failure means the concept itself is broken: regenerate the
+      // creative direction + design system too, not just the copy. (Copy mode
+      // must keep the stored design, so it always stays on the copy path.)
+      const hardFail =
+        report !== null && report.quality_score < hardFailureBelow;
+      if (attempt > 1 && hardFail && mode !== "copy") {
+        const regenerated = await generateDesignBrief(input, analysisJson, research, {
+          ...ai,
+          critique,
+        });
+        direction = regenerated.direction;
+        designSystem = regenerated.system;
+        brief = regenerated.brief;
+        style = regenerated.style;
+        if (!layoutOverride) {
+          layout = selectLayout({
+            category: business.category,
+            briefRecommendation: brief.recommended_layout_type,
+            storedReviewCount: business.reviews.length,
+            hasPhone: Boolean(business.phone),
+            hasHours: parseJsonField<string[]>(business.openingHours, []).length > 0,
+            hasEditorialSummary: Boolean(business.editorialSummary),
+          });
+        }
+      }
+
+      // Attempt 1 in style mode reuses the stored copy; every other attempt
+      // (re)writes it — with the previous audit's critique after a failure.
+      if (attempt > 1 || !copy) {
+        copy = await generateWebsiteCopy(input, analysisJson, {
+          ...ai,
+          websiteStyle: settings.defaultWebsiteStyle,
+          brief,
+          direction,
+          layout,
+          critique: attempt > 1 ? critique : undefined,
+        });
+      }
+
+      setGenerationProgress(business.id, {
+        stage: `Running quality audit — attempt ${attempt} of ${maximumAttempts}…`,
+        attempt,
+        maxAttempts: maximumAttempts,
+        bestScore: best?.score ?? null,
+      });
+      report = await reviewWebsiteQuality(input, copy, brief, layout, ai);
+
+      if (!best || report.quality_score > best.score) {
+        best = {
+          score: report.quality_score,
+          copy,
+          report,
+          direction,
+          designSystem,
+          brief,
+          style,
+          layout,
+        };
+      }
+      if (report.quality_score >= minimumPassingScore) break;
+
+      critique = buildCritique(report);
     }
 
-    // ---- Step 9: quality gate with up to two automatic improvement passes --
-    let report: QualityReportJson = await reviewWebsiteQuality(
-      input,
-      copy,
-      brief,
-      layout,
-      ai
-    );
-    for (
-      let attempt = 0;
-      attempt < 2 &&
-      (report.quality_score < QUALITY_THRESHOLD ||
-        report.hero_has_strong_idea === false) &&
-      report.improvement_instructions;
-      attempt++
-    ) {
-      // When the audit flags the hero as weak, force an explicit headline
-      // rewrite in the critique — the deterministic detector cannot see the
-      // reviewer's judgement, but the copywriter's rescue pass can act on it.
-      const critique =
-        report.hero_has_strong_idea === false
-          ? `${report.improvement_instructions}\nThe HEADLINE is too generic — it must name the single most-praised concrete service, dish, or job from the reviews (not "Professional ... Services" or "Quality ..."). A regular customer should recognize the specialty in the headline.`
-          : report.improvement_instructions;
-      const improved = await generateWebsiteCopy(input, analysisJson, {
-        ...ai,
-        websiteStyle: settings.defaultWebsiteStyle,
-        brief,
-        direction,
-        layout,
-        critique,
-      });
-      const improvedReport = await reviewWebsiteQuality(
-        input,
-        improved,
-        brief,
-        layout,
-        ai
-      );
-      // Accept when the rewrite scores at least as high, OR when it fixes a
-      // weak hero without a meaningful score regression.
-      const fixesHero =
-        report.hero_has_strong_idea === false &&
-        improvedReport.hero_has_strong_idea === true;
-      if (
-        improvedReport.quality_score >= report.quality_score ||
-        (fixesHero && improvedReport.quality_score >= report.quality_score - 3)
-      ) {
-        copy = improved;
-        report = improvedReport;
-      } else {
-        break; // the rewrite got worse — keep the best draft we have
-      }
-    }
+    if (!best) throw new Error("Generation loop produced no draft.");
+    const passed = best.score >= minimumPassingScore;
+    const generationStatus = passed ? "passed" : "failed_quality_gate";
+    // Everything below (uniqueness, render, save) uses the BEST attempt.
+    copy = best.copy;
+    direction = best.direction;
+    designSystem = best.designSystem;
+    brief = best.brief;
+    style = best.style;
+    layout = best.layout;
+    const finalReport = best.report;
+
+    setGenerationProgress(business.id, {
+      stage: passed
+        ? `Passed quality gate: ${best.score}/100 — finalizing…`
+        : `Failed quality gate after ${attemptsUsed} attempts (best ${best.score}/100) — saving diagnostic draft…`,
+      attempt: attemptsUsed,
+      maxAttempts: maximumAttempts,
+      bestScore: best.score,
+    });
 
     // ---- Uniqueness gate: no two sites share the same structural signature -
     const others = await prisma.generatedWebsite.findMany({
@@ -346,11 +451,15 @@ export async function POST(
       layoutType: layout,
       designBrief: JSON.stringify(brief),
       visualStyle: JSON.stringify(style),
-      qualityScore: report.quality_score,
-      qualityReport: JSON.stringify(report),
+      qualityScore: finalReport.quality_score,
+      qualityReport: JSON.stringify(finalReport),
       creativeDirection: JSON.stringify(direction),
       designSystem: JSON.stringify(designSystem),
       uniquenessNotes: JSON.stringify(uniqueness),
+      generationStatus,
+      qualityAttempts: attemptsUsed,
+      bestAttemptScore: best.score,
+      passedAt: passed ? new Date() : null,
     };
 
     const website = await prisma.generatedWebsite.upsert({
@@ -359,8 +468,22 @@ export async function POST(
       update: data,
     });
 
-    return NextResponse.json({ website: toWebsiteDto(website), research });
+    return NextResponse.json({
+      website: toWebsiteDto(website),
+      research,
+      generation: {
+        status: generationStatus,
+        score: best.score,
+        attempts: attemptsUsed,
+        maxAttempts: maximumAttempts,
+        message: passed
+          ? null
+          : "The generated website did not meet the required quality threshold.",
+      },
+    });
   } catch (err) {
     return errorResponse(err);
+  } finally {
+    clearGenerationProgress(params.id);
   }
 }

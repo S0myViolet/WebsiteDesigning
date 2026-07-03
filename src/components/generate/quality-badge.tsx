@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import type { GenerationStatus } from "@/lib/types";
 
 /** Soft tone classes shared by the quality badges. */
 const QUALITY_TONES = {
@@ -31,12 +32,33 @@ export function qualityTier(score: number): QualityTier {
 /** Big, prominent quality-score badge for the page header. */
 export function QualityScoreBadge({
   score,
+  status,
   className,
 }: {
   score: number | null;
+  /** Blocking-gate outcome; null/omitted keeps the legacy tier-only badge. */
+  status?: GenerationStatus | null;
   className?: string;
 }) {
   if (score === null) return null;
+  if (status === "failed_quality_gate") {
+    return (
+      <span
+        title={`Failed the blocking quality gate: best attempt scored ${score} / 100 (minimum 90)`}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1 text-sm font-semibold",
+          QUALITY_TONES.red,
+          className
+        )}
+      >
+        Failed quality gate
+        <span aria-hidden="true" className="opacity-50">
+          ·
+        </span>
+        <span className="tabular-nums">{score}/100</span>
+      </span>
+    );
+  }
   const tier = qualityTier(score);
   return (
     <span

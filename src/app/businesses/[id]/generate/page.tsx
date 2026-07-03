@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   Check,
   CheckCircle2,
@@ -89,6 +90,16 @@ const PIPELINE_STEPS = [
   "Running the quality gate",
 ];
 
+type GenerationProgress =
+  | { active: false }
+  | {
+      active: true;
+      stage: string;
+      attempt: number;
+      maxAttempts: number;
+      bestScore: number | null;
+    };
+
 async function readError(res: Response): Promise<string> {
   const data = (await res.json().catch(() => null)) as {
     error?: string;
@@ -166,6 +177,10 @@ export default function GenerateWebsitePage() {
     string | null
   >(null);
   const [copied, setCopied] = React.useState(false);
+  /** Live stage reported by the generation-progress endpoint while a POST runs. */
+  const [progressStage, setProgressStage] = React.useState<string | null>(
+    null
+  );
 
   const fetchDetail = React.useCallback(async () => {
     try {
@@ -201,6 +216,33 @@ export default function GenerateWebsitePage() {
     }, 6000);
     return () => clearInterval(timer);
   }, [generatingMode]);
+
+  // Poll the live generation progress while any generation POST is in flight.
+  React.useEffect(() => {
+    if (generatingMode === null) {
+      setProgressStage(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/businesses/${id}/generation-progress`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as GenerationProgress;
+        if (!cancelled) setProgressStage(data.active ? data.stage : null);
+      } catch {
+        // Ignore polling errors — the generic generating label stays visible.
+      }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [generatingMode, id]);
 
   const handleGenerate = React.useCallback(
     async (action: PipelineAction, layout?: LayoutType) => {
@@ -309,6 +351,17 @@ export default function GenerateWebsitePage() {
   const website = business.website;
   const copy = website?.copy ?? null;
   const generating = generatingMode !== null;
+  const failedQualityGate =
+    website?.generationStatus === "failed_quality_gate";
+  /** Up to 4 remaining issues for the failure panel: priority fixes, else
+      high-severity issue notes. */
+  const remainingFixes = (
+    website?.qualityReport?.priority_fixes?.length
+      ? website.qualityReport.priority_fixes
+      : (website?.qualityReport?.issues ?? [])
+          .filter((issue) => issue.severity === "high")
+          .map((issue) => `${issue.area}: ${issue.note}`)
+  ).slice(0, 4);
   /** Layout shown in the picker: explicit choice, else the current layout. */
   const layoutChoice: LayoutType =
     selectedLayout ?? website?.layoutType ?? LAYOUT_TYPES[0];
@@ -392,6 +445,12 @@ export default function GenerateWebsitePage() {
                 )}
                 {generating ? "Generating website…" : "Generate website"}
               </Button>
+              {generating && progressStage && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Spinner size="sm" />
+                  {progressStage}
+                </p>
+              )}
               {genError && <InlineError message={genError} />}
             </CardContent>
           </Card>
@@ -430,7 +489,10 @@ export default function GenerateWebsitePage() {
               {LAYOUT_TYPE_LABELS[website.layoutType]}
             </Badge>
           )}
-          <QualityScoreBadge score={website.qualityScore} />
+          <QualityScoreBadge
+            score={website.qualityScore}
+            status={website.generationStatus}
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -515,7 +577,7 @@ export default function GenerateWebsitePage() {
             <Button
               variant="outline"
               onClick={() => void handlePublish()}
-              disabled={generating || publishing}
+              disabled={generating || publishing || failedQualityGate}
             >
               {publishing ? <Spinner size="sm" /> : <Globe />}
               {publishing
@@ -526,6 +588,19 @@ export default function GenerateWebsitePage() {
             </Button>
           )}
         </div>
+
+        {website.hasPreview && failedQualityGate && (
+          <p className="text-xs text-muted-foreground">
+            Demo publishing is disabled until a draft passes the quality gate.
+          </p>
+        )}
+
+        {generating && progressStage && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner size="sm" />
+            {progressStage}
+          </p>
+        )}
       </div>
 
       {genError && <InlineError message={genError} />}
@@ -574,6 +649,53 @@ export default function GenerateWebsitePage() {
         </Card>
       )}
 
+      {failedQualityGate && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base text-destructive">
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              Generation failed the quality gate
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p>
+              Best score
+              {website.qualityAttempts
+                ? ` across ${website.qualityAttempts} attempts`
+                : ""}
+              : {website.bestAttemptScore ?? website.qualityScore}/100 —
+              minimum to pass is 90.
+            </p>
+            {remainingFixes.length > 0 && (
+              <div>
+                <p className="font-medium">Remaining issues:</p>
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  {remainingFixes.map((fix, i) => (
+                    <li key={`${fix}-${i}`}>{fix}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <Button
+              onClick={() => void handleGenerate("full")}
+              disabled={generating}
+            >
+              {generatingMode === "full" ? (
+                <Spinner size="sm" className="text-primary-foreground" />
+              ) : (
+                <Wand2 />
+              )}
+              {generatingMode === "full"
+                ? MODE_LOADING_LABELS.full
+                : "Try full regeneration"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              The preview below is a diagnostic draft, not a finished website.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-5">
         {/* LEFT: live preview (~60%) */}
         <div className="lg:col-span-3 lg:sticky lg:top-6 lg:self-start">
@@ -594,6 +716,7 @@ export default function GenerateWebsitePage() {
           <QualityReviewCard
             score={website.qualityScore}
             report={website.qualityReport}
+            generationStatus={website.generationStatus}
           />
           <UniquenessCard notes={website.uniquenessNotes} />
           <DesignBriefCard brief={website.designBrief} />

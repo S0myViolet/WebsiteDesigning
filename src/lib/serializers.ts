@@ -25,6 +25,7 @@ import {
   type DesignSystemJson,
   type HandoffChecklist,
   type DesignBriefJson,
+  type GenerationStatus,
   type LayoutType,
   type LeadStatusValue,
   type QualityReportJson,
@@ -141,6 +142,18 @@ export function toWebsiteDto(w: GeneratedWebsite): WebsiteDto {
     visualStyle: parseJsonField<VisualStyleJson | null>(w.visualStyle, null),
     qualityScore: w.qualityScore,
     qualityReport: parseJsonField<QualityReportJson | null>(w.qualityReport, null),
+    // Legacy rows (generated before the blocking gate) have no stored status;
+    // derive it from the score so old sub-90 drafts also read as failed.
+    generationStatus:
+      w.generationStatus === "passed" || w.generationStatus === "failed_quality_gate"
+        ? (w.generationStatus as GenerationStatus)
+        : w.qualityScore === null
+          ? null
+          : w.qualityScore >= 90
+            ? "passed"
+            : "failed_quality_gate",
+    qualityAttempts: w.qualityAttempts,
+    bestAttemptScore: w.bestAttemptScore ?? w.qualityScore,
     creativeDirection: parseJsonField<CreativeDirectionJson | null>(
       w.creativeDirection,
       null

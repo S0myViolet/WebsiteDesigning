@@ -17,6 +17,20 @@ import type { BusinessAnalysisInput } from "@/lib/ai/analysis";
 
 export const QUALITY_THRESHOLD = 90;
 
+/**
+ * Blocking quality-gate policy. A draft below minimumPassingScore is a FAILED
+ * generation: the pipeline keeps improving/regenerating until it passes or
+ * maximumAttempts is reached. Below hardFailureBelow the concept itself is
+ * considered broken and the next attempt regenerates direction + design, not
+ * just the copy.
+ */
+export const QUALITY_GATE = {
+  minimumPassingScore: QUALITY_THRESHOLD,
+  targetScore: 92,
+  maximumAttempts: 5,
+  hardFailureBelow: 85,
+} as const;
+
 function copyToPlainText(copy: WebsiteCopyJson): string {
   return [
     copy.headline,
@@ -44,6 +58,7 @@ const reviewSchema = z.object({
   generic_phrases_found: z.array(z.string()).catch([]),
   unsupported_claims_found: z.array(z.string()).catch([]),
   design_notes: z.array(z.string()).catch([]),
+  priority_fixes: z.array(z.string()).catch([]),
   issues: z
     .array(
       z.object({
@@ -77,6 +92,7 @@ Rate across TEN dimensions and weigh them equally: originality, premium feel, bu
 Scoring guide: 94+ = agency-grade, would impress a real owner as-is; 90-93 = client-ready; 80-89 = good but still reads assembled in places — FAIL; 60-79 = templated; below 60 = filler or unsupported claims. Be harsh: "merely good enough" must fail. Reserve 94+ for genuinely sharp work.
 
 design_notes: 2-4 short observations about what makes (or would make) this feel custom-designed rather than generated.
+priority_fixes: the 2-4 highest-impact changes, ordered, each one concrete and actionable ("Replace the headline with ...", "Add a what-regulars-order section using ..."). Empty array only when the score is 92+.
 improvement_instructions: a numbered list of concrete rewrite instructions fixing every issue found (empty string only when the score is 92+).
 
 Respond with VALID JSON ONLY:
@@ -89,6 +105,7 @@ Respond with VALID JSON ONLY:
   "generic_phrases_found": string[],
   "unsupported_claims_found": string[],
   "design_notes": string[],
+  "priority_fixes": string[],
   "issues": [{ "area": string, "severity": "high"|"medium"|"low", "note": string }],
   "improvement_instructions": string
 }`;
@@ -212,6 +229,7 @@ export async function reviewWebsiteQuality(
         generic_phrases_found: [],
         unsupported_claims_found: [],
         design_notes: [],
+        priority_fixes: [],
         issues: [
           {
             area: "review",
@@ -224,7 +242,50 @@ export async function reviewWebsiteQuality(
       };
 
   const det = deterministicChecks(input, copy);
-  const score = Math.max(0, Math.min(100, Math.round(ai.quality_score) - det.deduction));
+  let score = Math.max(0, Math.min(100, Math.round(ai.quality_score) - det.deduction));
+
+  // Deterministic hard caps: certain failures make a draft unable to pass the
+  // gate regardless of how generous the AI reviewer felt. Caps below
+  // QUALITY_GATE.hardFailureBelow force the aggressive-regeneration path.
+  const featureCount = (copy.feature_sections ?? []).filter(
+    (s) => s.items.length >= 2
+  ).length;
+  const caps: { cap: number; note: string }[] = [];
+  if (featureCount < 2) {
+    caps.push({
+      cap: QUALITY_GATE.minimumPassingScore - 1,
+      note: "fewer than 2 business-specific feature sections",
+    });
+  }
+  if (ai.hero_has_strong_idea === false) {
+    caps.push({
+      cap: QUALITY_GATE.minimumPassingScore - 1,
+      note: "the hero lacks a strong business-specific idea",
+    });
+  }
+  if (det.genericFound.length >= 4) {
+    caps.push({
+      cap: QUALITY_GATE.hardFailureBelow - 1,
+      note: `${det.genericFound.length} generic AI phrases found`,
+    });
+  }
+  if (det.bannedFound.length > 0) {
+    caps.push({
+      cap: QUALITY_GATE.hardFailureBelow - 1,
+      note: "unsupported claim phrasing found",
+    });
+  }
+  const capIssues: QualityIssue[] = [];
+  for (const { cap, note } of caps) {
+    if (score > cap) {
+      score = cap;
+      capIssues.push({
+        area: "gate",
+        severity: "high",
+        note: `Score capped at ${cap}: ${note}.`,
+      });
+    }
+  }
 
   const improvement = [
     ai.improvement_instructions.trim(),
@@ -245,13 +306,14 @@ export async function reviewWebsiteQuality(
     hero_has_strong_idea: ai.hero_has_strong_idea,
     has_business_specific_features: ai.has_business_specific_features,
     design_notes: ai.design_notes,
+    priority_fixes: ai.priority_fixes,
     generic_phrases_found: Array.from(
       new Set([...ai.generic_phrases_found, ...det.genericFound])
     ),
     unsupported_claims_found: Array.from(
       new Set([...ai.unsupported_claims_found, ...det.bannedFound])
     ),
-    issues: [...ai.issues, ...det.issues],
+    issues: [...ai.issues, ...det.issues, ...capIssues],
     improvement_instructions: improvement,
   };
 }

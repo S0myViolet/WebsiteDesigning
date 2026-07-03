@@ -383,7 +383,7 @@ export async function generateDesignBrief(
   input: BusinessAnalysisInput,
   analysis: AnalysisJson,
   research: ResearchResult | null,
-  opts: { apiKey: string; model: string }
+  opts: { apiKey: string; model: string; critique?: string }
 ): Promise<{
   direction: CreativeDirectionJson;
   system: DesignSystemJson;
@@ -391,7 +391,14 @@ export async function generateDesignBrief(
   style: VisualStyleJson;
 }> {
   const system = buildSystemPrompt();
-  const user = buildUserPrompt(input, analysis, research);
+  const user =
+    buildUserPrompt(input, analysis, research) +
+    (opts.critique
+      ? `
+
+PREVIOUS ATTEMPT FAILED THE QUALITY GATE. Do NOT repeat the same concept — invent a meaningfully different creative direction that avoids these problems:
+${opts.critique}`
+      : "");
 
   const raw = await chatJson<unknown>({
     apiKey: opts.apiKey,
